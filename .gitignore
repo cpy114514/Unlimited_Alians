@@ -1,8 +1,81 @@
-Library/
-Temp/
-Obj/
-.vs/
-Build/
-Builds/
-Logs/
+# =========================
+# Unity Generated folders
+# =========================
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
 UserSettings/
+MemoryCaptures/
+
+# =========================
+# Unity Package cache
+# =========================
+Library/PackageCache/
+
+# =========================
+# Visual Studio / Rider
+# =========================
+.vs/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# =========================
+# OS generated files
+# =========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =========================
+# Unity auto generated files
+# =========================
+sysinfo.txt
+*.apk
+*.unitypackage
+
+# =========================
+# Crash reports
+# =========================
+crashlytics-build.properties
+
+# =========================
+# Build results
+# =========================
+*.app
+*.exe
+*.apk
+*.aab
+*.ipa
+*.xcodeproj
+*.xcworkspace
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Gradle
+# =========================
+.gradle/
+
+# =========================
+# Addressables
+# =========================
+ServerData/
