@@ -1394,7 +1394,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 578fc9415ab769f49906e3d1a3f69764, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  levelSceneName: Map1
+  levelSceneName: Map2
   countdownTime: 3
   countdownText: {fileID: 1771284769}
 --- !u!212 &700584990

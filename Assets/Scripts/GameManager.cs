@@ -1,38 +1,135 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
+    public static GameManager Instance;
+
     public GameObject wasdPrefab;
     public GameObject arrowPrefab;
     public GameObject ijklPrefab;
 
     public Transform[] spawnPoints;
 
-    void Start()
+    readonly Dictionary<PlayerController.ControlType, PlayerController> playersByType =
+        new Dictionary<PlayerController.ControlType, PlayerController>();
+
+    readonly List<PlayerController.ControlType> sessionPlayers =
+        new List<PlayerController.ControlType>();
+
+    void Awake()
     {
-        if (PlayerSessionManager.Instance == null)
+        if (Instance != null && Instance != this)
         {
-            Debug.Log("SessionManager is NULL!");
+            Destroy(this);
             return;
         }
 
-        var players = PlayerSessionManager.Instance.activePlayers;
+        Instance = this;
+    }
 
-        Debug.Log("Players in session: " + players.Count);
-        Debug.Log("SpawnPoints: " + spawnPoints.Length);
+    void Start()
+    {
+        InitializeSessionPlayers();
+        SpawnMissingPlayersAtSpawns();
+    }
 
-        for (int i = 0; i < players.Count; i++)
+    void OnDestroy()
+    {
+        if (Instance == this)
         {
-            Debug.Log("Spawning: " + players[i]);
-
-            GameObject prefab = GetPrefab(players[i]);
-
-            Instantiate(
-                prefab,
-                spawnPoints[i].position,
-                Quaternion.identity
-            );
+            Instance = null;
         }
+    }
+
+    void InitializeSessionPlayers()
+    {
+        sessionPlayers.Clear();
+
+        if (PlayerSessionManager.Instance != null &&
+            PlayerSessionManager.Instance.activePlayers.Count > 0)
+        {
+            sessionPlayers.AddRange(PlayerSessionManager.Instance.activePlayers);
+        }
+        else
+        {
+            sessionPlayers.Add(PlayerController.ControlType.WASD);
+            Debug.LogWarning("No active lobby session found. Defaulting to a single WASD player.");
+        }
+
+        if (sessionPlayers.Count > spawnPoints.Length)
+        {
+            Debug.LogWarning("Not enough spawn points for all joined players.");
+        }
+    }
+
+    void SpawnMissingPlayersAtSpawns()
+    {
+        int playerCount = Mathf.Min(sessionPlayers.Count, spawnPoints.Length);
+
+        for (int i = 0; i < playerCount; i++)
+        {
+            PlayerController.ControlType controlType = sessionPlayers[i];
+
+            if (playersByType.TryGetValue(controlType, out PlayerController existingPlayer) &&
+                existingPlayer != null)
+            {
+                existingPlayer.ResetForNextRound(spawnPoints[i].position);
+                continue;
+            }
+
+            SpawnPlayer(controlType, spawnPoints[i].position);
+        }
+    }
+
+    PlayerController SpawnPlayer(PlayerController.ControlType type, Vector3 position)
+    {
+        GameObject prefab = GetPrefab(type);
+
+        if (prefab == null)
+        {
+            Debug.LogError("Missing prefab for " + type);
+            return null;
+        }
+
+        GameObject playerObject = Instantiate(prefab, position, Quaternion.identity);
+        PlayerController player = playerObject.GetComponent<PlayerController>();
+
+        if (player == null)
+        {
+            Debug.LogError("Spawned prefab does not have a PlayerController: " + prefab.name);
+            Destroy(playerObject);
+            return null;
+        }
+
+        player.controlType = type;
+        player.ResetForNextRound(position);
+        playersByType[type] = player;
+
+        return player;
+    }
+
+    public void SetAllPlayerControl(bool enabled)
+    {
+        foreach (PlayerController.ControlType controlType in sessionPlayers)
+        {
+            if (!playersByType.TryGetValue(controlType, out PlayerController player) || player == null)
+            {
+                continue;
+            }
+
+            player.SetControlEnabled(enabled);
+        }
+    }
+
+    public void ResetRound()
+    {
+        SpawnMissingPlayersAtSpawns();
+    }
+
+    public List<PlayerController.ControlType> GetSessionPlayers()
+    {
+        return new List<PlayerController.ControlType>(sessionPlayers);
     }
 
     GameObject GetPrefab(PlayerController.ControlType type)
@@ -46,6 +143,7 @@ public class GameManager : MonoBehaviour
             case PlayerController.ControlType.IJKL:
                 return ijklPrefab;
         }
+
         return null;
     }
 }

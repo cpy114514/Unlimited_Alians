@@ -1,5 +1,5 @@
+using System.Collections;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public class RoundManager : MonoBehaviour
 {
@@ -7,45 +7,84 @@ public class RoundManager : MonoBehaviour
 
     public float nextRoundDelay = 3f;
 
-    bool roundEnding = false;
+    bool roundEnding;
 
     void Awake()
     {
-        if (Instance == null)
+        if (Instance != null && Instance != this)
         {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
+            Destroy(this);
+            return;
         }
-        else
+
+        Instance = this;
+        Time.timeScale = 1f;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this)
         {
-            Destroy(gameObject);
+            Time.timeScale = 1f;
+            Instance = null;
         }
     }
 
     public void PlayerWin(PlayerController.ControlType player)
     {
-        if (roundEnding) return;
+        if (roundEnding)
+        {
+            return;
+        }
 
         roundEnding = true;
 
-        ScoreManager.Instance.AddScore(player);
+        bool matchWon = false;
+
+        if (ScoreManager.Instance != null)
+        {
+            ScoreManager.Instance.AddScore(player);
+            matchWon = ScoreManager.Instance.GetScore(player) >= ScoreManager.WinningScore;
+        }
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.SetAllPlayerControl(false);
+        }
+
+        Time.timeScale = 0f;
 
         ScoreboardUI board = FindObjectOfType<ScoreboardUI>();
         if (board != null)
         {
-            board.panel.SetActive(true);
-            board.UpdateScores();
+            board.ShowRoundResults(player, matchWon);
         }
 
-        StartCoroutine(NextRound());
+        StartCoroutine(NextRound(matchWon));
     }
 
-    System.Collections.IEnumerator NextRound()
+    IEnumerator NextRound(bool matchWon)
     {
         yield return new WaitForSecondsRealtime(nextRoundDelay);
 
+        ScoreboardUI board = FindObjectOfType<ScoreboardUI>();
+        if (board != null)
+        {
+            board.Hide();
+        }
+
+        if (matchWon)
+        {
+            ScoreManager.ResetScores();
+        }
+
         Time.timeScale = 1f;
 
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.ResetRound();
+        }
+
+        roundEnding = false;
     }
 }

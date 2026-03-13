@@ -1,7 +1,9 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
+    public bool canControl = true;
+
     public enum ControlType
     {
         WASD,
@@ -63,6 +65,12 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
+        if (!canControl)
+        {
+            ClearInput();
+            return;
+        }
+
         HandleInput();
         DetectGround();
         DetectWalls();
@@ -73,9 +81,52 @@ public class PlayerController : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (!canControl)
+        {
+            if (rb.velocity != Vector2.zero)
+            {
+                rb.velocity = Vector2.zero;
+            }
+
+            return;
+        }
+
         HandleMovement();
         HandleWallSlide();
         BetterJump();
+    }
+
+    void ClearInput()
+    {
+        horizontal = 0f;
+        jumpPressed = false;
+        jumpHeld = false;
+    }
+
+    public void SetControlEnabled(bool enabled)
+    {
+        canControl = enabled;
+        ClearInput();
+
+        if (!enabled)
+        {
+            rb.velocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+        }
+    }
+
+    public void ResetForNextRound(Vector3 spawnPosition)
+    {
+        transform.position = spawnPosition;
+        transform.rotation = Quaternion.identity;
+
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+
+        coyoteTimer = 0f;
+        DetectGround();
+        DetectWalls();
+        SetControlEnabled(true);
     }
 
     void HandleInput()
@@ -138,16 +189,22 @@ public class PlayerController : MonoBehaviour
     void HandleCoyoteTime()
     {
         if (isGrounded)
+        {
             coyoteTimer = coyoteTime;
+        }
         else
+        {
             coyoteTimer -= Time.deltaTime;
+        }
     }
 
     void HandleJump()
     {
-        if (!jumpPressed) return;
+        if (!jumpPressed)
+        {
+            return;
+        }
 
-        // 普通跳
         if (coyoteTimer > 0)
         {
             rb.velocity = new Vector2(rb.velocity.x, jumpForce);
@@ -155,18 +212,15 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // 左墙跳
         if (touchingWallLeft)
         {
             rb.velocity = new Vector2(wallJumpForceX, wallJumpForceY);
             return;
         }
 
-        // 右墙跳
         if (touchingWallRight)
         {
             rb.velocity = new Vector2(-wallJumpForceX, wallJumpForceY);
-            return;
         }
     }
 
@@ -175,13 +229,12 @@ public class PlayerController : MonoBehaviour
         if (isGrounded)
         {
             rb.velocity = new Vector2(horizontal * moveSpeed, rb.velocity.y);
+            return;
         }
-        else
-        {
-            float targetSpeed = horizontal * moveSpeed;
-            float newX = Mathf.Lerp(rb.velocity.x, targetSpeed, airControl * Time.fixedDeltaTime);
-            rb.velocity = new Vector2(newX, rb.velocity.y);
-        }
+
+        float targetSpeed = horizontal * moveSpeed;
+        float newX = Mathf.Lerp(rb.velocity.x, targetSpeed, airControl * Time.fixedDeltaTime);
+        rb.velocity = new Vector2(newX, rb.velocity.y);
     }
 
     void HandleWallSlide()
@@ -209,9 +262,13 @@ public class PlayerController : MonoBehaviour
     void HandleFlip()
     {
         if (horizontal > 0.1f)
+        {
             sr.flipX = true;
+        }
         else if (horizontal < -0.1f)
+        {
             sr.flipX = false;
+        }
     }
 
     void OnDrawGizmosSelected()
@@ -219,22 +276,28 @@ public class PlayerController : MonoBehaviour
         if (groundCheck != null)
         {
             Gizmos.color = Color.red;
-            Gizmos.DrawLine(groundCheck.position,
-                groundCheck.position + Vector3.down * groundCheckDistance);
+            Gizmos.DrawLine(
+                groundCheck.position,
+                groundCheck.position + Vector3.down * groundCheckDistance
+            );
         }
 
         if (wallCheckLeft != null)
         {
             Gizmos.color = Color.blue;
-            Gizmos.DrawLine(wallCheckLeft.position,
-                wallCheckLeft.position + Vector3.left * wallCheckDistance);
+            Gizmos.DrawLine(
+                wallCheckLeft.position,
+                wallCheckLeft.position + Vector3.left * wallCheckDistance
+            );
         }
 
         if (wallCheckRight != null)
         {
             Gizmos.color = Color.green;
-            Gizmos.DrawLine(wallCheckRight.position,
-                wallCheckRight.position + Vector3.right * wallCheckDistance);
+            Gizmos.DrawLine(
+                wallCheckRight.position,
+                wallCheckRight.position + Vector3.right * wallCheckDistance
+            );
         }
     }
 }
