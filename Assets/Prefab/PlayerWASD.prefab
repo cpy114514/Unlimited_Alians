@@ -188,20 +188,31 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   controlType: 0
-  moveSpeed: 6
+  moveSpeed: 7.25
   airControl: 5
-  jumpForce: 10
-  fallMultiplier: 2
-  lowJumpMultiplier: 1
-  wallJumpForceX: 10
-  wallJumpForceY: 12
-  wallSlideSpeed: 2
-  coyoteTime: 0.1
+  groundAcceleration: 90
+  groundDeceleration: 110
+  airAcceleration: 55
+  airDeceleration: 35
+  maxFallSpeed: 20
+  jumpForce: 11.5
+  fallMultiplier: 4.2
+  lowJumpMultiplier: 6
+  jumpBufferTime: 0.12
+  holdJumpToBounce: 1
+  wallJumpForceX: 10.5
+  wallJumpForceY: 12.5
+  wallSlideSpeed: 2.4
+  coyoteTime: 0.12
   groundCheck: {fileID: 5541035222052466356}
   groundCheckDistance: 0.2
   wallCheckLeft: {fileID: 6288732260690772170}
   wallCheckRight: {fileID: 508396386789284814}
   wallCheckDistance: 0.2
+  idleSprite: {fileID: 772410372, guid: 7e0e3c7405365b94d9976121d63eba80, type: 3}
+  runSpriteA: {fileID: 772410372, guid: 7e0e3c7405365b94d9976121d63eba80, type: 3}
+  runSpriteB: {fileID: 422275308, guid: 7e0e3c7405365b94d9976121d63eba80, type: 3}
+  runAnimationSpeed: 10
   groundLayer:
     serializedVersion: 2
     m_Bits: 64

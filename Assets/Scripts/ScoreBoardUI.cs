@@ -22,8 +22,8 @@ public class ScoreboardUI : MonoBehaviour
     static readonly PlayerController.ControlType[] fallbackOrder =
     {
         PlayerController.ControlType.WASD,
-        PlayerController.ControlType.ArrowKeys,
-        PlayerController.ControlType.IJKL
+        PlayerController.ControlType.IJKL,
+        PlayerController.ControlType.ArrowKeys
     };
 
     readonly Dictionary<PlayerController.ControlType, TextMeshProUGUI> labels =
@@ -55,7 +55,7 @@ public class ScoreboardUI : MonoBehaviour
         Hide();
     }
 
-    public void ShowRoundResults(PlayerController.ControlType winner, bool matchWon)
+    public void ShowRoundResults(PlayerController.ControlType? winner, bool matchWon)
     {
         EnsureVisualsBuilt();
 
@@ -64,7 +64,19 @@ public class ScoreboardUI : MonoBehaviour
             panel.SetActive(true);
         }
 
-        UpdateScores(winner, matchWon);
+        UpdateScores(winner, matchWon, false);
+    }
+
+    public void ShowNoWinnerResults()
+    {
+        EnsureVisualsBuilt();
+
+        if (panel != null)
+        {
+            panel.SetActive(true);
+        }
+
+        UpdateScores(null, false, true);
     }
 
     public void Hide()
@@ -83,10 +95,14 @@ public class ScoreboardUI : MonoBehaviour
 
     public void UpdateScores()
     {
-        UpdateScores(null, false);
+        UpdateScores(null, false, false);
     }
 
-    void UpdateScores(PlayerController.ControlType? winner, bool matchWon)
+    void UpdateScores(
+        PlayerController.ControlType? winner,
+        bool matchWon,
+        bool noWinner
+    )
     {
         if (panel == null || ScoreManager.Instance == null)
         {
@@ -101,7 +117,7 @@ public class ScoreboardUI : MonoBehaviour
             visiblePlayers.Add(PlayerController.ControlType.WASD);
         }
 
-        LayoutChart(visiblePlayers, winner, matchWon);
+        LayoutChart(visiblePlayers, winner, matchWon, noWinner);
 
         if (animateRoutine != null)
         {
@@ -120,14 +136,14 @@ public class ScoreboardUI : MonoBehaviour
             labels[PlayerController.ControlType.WASD] = wasdText;
         }
 
-        if (arrowText != null)
-        {
-            labels[PlayerController.ControlType.ArrowKeys] = arrowText;
-        }
-
         if (ijklText != null)
         {
             labels[PlayerController.ControlType.IJKL] = ijklText;
+        }
+
+        if (arrowText != null)
+        {
+            labels[PlayerController.ControlType.ArrowKeys] = arrowText;
         }
     }
 
@@ -248,7 +264,18 @@ public class ScoreboardUI : MonoBehaviour
         if (PlayerSessionManager.Instance != null &&
             PlayerSessionManager.Instance.activePlayers.Count > 0)
         {
-            return new List<PlayerController.ControlType>(PlayerSessionManager.Instance.activePlayers);
+            List<PlayerController.ControlType> players =
+                new List<PlayerController.ControlType>();
+
+            foreach (PlayerController.ControlType type in fallbackOrder)
+            {
+                if (PlayerSessionManager.Instance.activePlayers.Contains(type))
+                {
+                    players.Add(type);
+                }
+            }
+
+            return players;
         }
 
         return new List<PlayerController.ControlType>(fallbackOrder);
@@ -257,7 +284,8 @@ public class ScoreboardUI : MonoBehaviour
     void LayoutChart(
         List<PlayerController.ControlType> visiblePlayers,
         PlayerController.ControlType? winner,
-        bool matchWon
+        bool matchWon,
+        bool noWinner
     )
     {
         HashSet<PlayerController.ControlType> visibleSet =
@@ -293,8 +321,8 @@ public class ScoreboardUI : MonoBehaviour
         if (titleText != null)
         {
             titleText.alignment = TextAlignmentOptions.Center;
-            titleText.fontSize = 48f;
-            titleText.text = GetTitleText(winner, matchWon);
+            titleText.fontSize = 42f;
+            titleText.text = GetTitleText(winner, matchWon, noWinner);
         }
     }
 
@@ -394,15 +422,24 @@ public class ScoreboardUI : MonoBehaviour
         animateRoutine = null;
     }
 
-    string GetTitleText(PlayerController.ControlType? winner, bool matchWon)
+    string GetTitleText(
+        PlayerController.ControlType? winner,
+        bool matchWon,
+        bool noWinner
+    )
     {
+        if (noWinner)
+        {
+            return "NO PLAYER WINS\nNO POINTS AWARDED";
+        }
+
         if (!winner.HasValue)
         {
             return "SCOREBOARD";
         }
 
         return matchWon
-            ? GetDisplayName(winner.Value) + " TAKES THE MATCH!"
+            ? GetDisplayName(winner.Value) + " WINS THE MATCH!"
             : GetDisplayName(winner.Value) + " WINS THE ROUND!";
     }
 
@@ -411,11 +448,11 @@ public class ScoreboardUI : MonoBehaviour
         switch (type)
         {
             case PlayerController.ControlType.WASD:
-                return "WASD";
-            case PlayerController.ControlType.ArrowKeys:
-                return "ARROWS";
+                return "P1";
             case PlayerController.ControlType.IJKL:
-                return "IJKL";
+                return "P2";
+            case PlayerController.ControlType.ArrowKeys:
+                return "P3";
         }
 
         return type.ToString();
@@ -427,10 +464,10 @@ public class ScoreboardUI : MonoBehaviour
         {
             case PlayerController.ControlType.WASD:
                 return new Color(1f, 0.78f, 0.2f);
-            case PlayerController.ControlType.ArrowKeys:
-                return new Color(0.3f, 0.8f, 1f);
             case PlayerController.ControlType.IJKL:
                 return new Color(1f, 0.4f, 0.52f);
+            case PlayerController.ControlType.ArrowKeys:
+                return new Color(0.3f, 0.8f, 1f);
         }
 
         return Color.white;

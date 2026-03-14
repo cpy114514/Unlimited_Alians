@@ -5,6 +5,13 @@ public class GameManager : MonoBehaviour
 {
     public static GameManager Instance;
 
+    static readonly PlayerController.ControlType[] preferredPlayerOrder =
+    {
+        PlayerController.ControlType.WASD,
+        PlayerController.ControlType.IJKL,
+        PlayerController.ControlType.ArrowKeys
+    };
+
     public GameObject wasdPrefab;
     public GameObject arrowPrefab;
     public GameObject ijklPrefab;
@@ -46,15 +53,26 @@ public class GameManager : MonoBehaviour
     {
         sessionPlayers.Clear();
 
+        List<PlayerController.ControlType> requestedPlayers =
+            new List<PlayerController.ControlType>();
+
         if (PlayerSessionManager.Instance != null &&
             PlayerSessionManager.Instance.activePlayers.Count > 0)
         {
-            sessionPlayers.AddRange(PlayerSessionManager.Instance.activePlayers);
+            requestedPlayers.AddRange(PlayerSessionManager.Instance.activePlayers);
         }
         else
         {
-            sessionPlayers.Add(PlayerController.ControlType.WASD);
+            requestedPlayers.Add(PlayerController.ControlType.WASD);
             Debug.LogWarning("No active lobby session found. Defaulting to a single WASD player.");
+        }
+
+        foreach (PlayerController.ControlType controlType in preferredPlayerOrder)
+        {
+            if (requestedPlayers.Contains(controlType))
+            {
+                sessionPlayers.Add(controlType);
+            }
         }
 
         if (sessionPlayers.Count > spawnPoints.Length)
@@ -120,6 +138,26 @@ public class GameManager : MonoBehaviour
 
             player.SetControlEnabled(enabled);
         }
+    }
+
+    public void MarkPlayerDead(PlayerController.ControlType player)
+    {
+        playersByType[player] = null;
+    }
+
+    public int GetAlivePlayerCount()
+    {
+        int alivePlayers = 0;
+
+        foreach (PlayerController.ControlType controlType in sessionPlayers)
+        {
+            if (playersByType.TryGetValue(controlType, out PlayerController player) && player != null)
+            {
+                alivePlayers++;
+            }
+        }
+
+        return alivePlayers;
     }
 
     public void ResetRound()

@@ -47,6 +47,31 @@ public class RoundManager : MonoBehaviour
             matchWon = ScoreManager.Instance.GetScore(player) >= ScoreManager.WinningScore;
         }
 
+        FinishRound(player, matchWon, false);
+    }
+
+    public void PlayerDied(PlayerController.ControlType player)
+    {
+        if (roundEnding || GameManager.Instance == null)
+        {
+            return;
+        }
+
+        GameManager.Instance.MarkPlayerDead(player);
+
+        if (GameManager.Instance.GetAlivePlayerCount() == 0)
+        {
+            roundEnding = true;
+            FinishRound(null, false, true);
+        }
+    }
+
+    void FinishRound(
+        PlayerController.ControlType? winner,
+        bool matchWon,
+        bool noWinner
+    )
+    {
         if (GameManager.Instance != null)
         {
             GameManager.Instance.SetAllPlayerControl(false);
@@ -57,7 +82,14 @@ public class RoundManager : MonoBehaviour
         ScoreboardUI board = FindObjectOfType<ScoreboardUI>();
         if (board != null)
         {
-            board.ShowRoundResults(player, matchWon);
+            if (noWinner)
+            {
+                board.ShowNoWinnerResults();
+            }
+            else
+            {
+                board.ShowRoundResults(winner, matchWon);
+            }
         }
 
         StartCoroutine(NextRound(matchWon));

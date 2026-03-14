@@ -17,11 +17,18 @@ public class PlayerController : MonoBehaviour
     [Header("Movement")]
     public float moveSpeed = 8f;
     public float airControl = 5f;
+    public float groundAcceleration = 90f;
+    public float groundDeceleration = 110f;
+    public float airAcceleration = 55f;
+    public float airDeceleration = 35f;
+    public float maxFallSpeed = 20f;
 
     [Header("Jump")]
     public float jumpForce = 12f;
     public float fallMultiplier = 3f;
     public float lowJumpMultiplier = 2f;
+    public float jumpBufferTime = 0.12f;
+    public bool holdJumpToBounce = true;
 
     [Header("Wall Jump")]
     public float wallJumpForceX = 10f;
@@ -42,25 +49,38 @@ public class PlayerController : MonoBehaviour
     public Transform wallCheckRight;
     public float wallCheckDistance = 0.2f;
 
+    [Header("Animation")]
+    public Sprite idleSprite;
+    public Sprite runSpriteA;
+    public Sprite runSpriteB;
+    public float runAnimationSpeed = 10f;
+
     public LayerMask groundLayer;
 
     Rigidbody2D rb;
     SpriteRenderer sr;
 
     float horizontal;
-    bool jumpPressed;
     bool jumpHeld;
+    bool holdJumpQueued;
 
     bool isGrounded;
     bool touchingWallLeft;
     bool touchingWallRight;
 
     float coyoteTimer;
+    float jumpBufferTimer;
+    float runAnimationTimer;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         sr = GetComponent<SpriteRenderer>();
+
+        if (idleSprite == null && sr != null)
+        {
+            idleSprite = sr.sprite;
+        }
     }
 
     void Update()
@@ -71,12 +91,13 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        HandleInput();
         DetectGround();
         DetectWalls();
+        HandleInput();
         HandleCoyoteTime();
         HandleJump();
         HandleFlip();
+        HandleAnimation();
     }
 
     void FixedUpdate()
@@ -99,8 +120,9 @@ public class PlayerController : MonoBehaviour
     void ClearInput()
     {
         horizontal = 0f;
-        jumpPressed = false;
         jumpHeld = false;
+        holdJumpQueued = false;
+        jumpBufferTimer = 0f;
     }
 
     public void SetControlEnabled(bool enabled)
@@ -124,15 +146,19 @@ public class PlayerController : MonoBehaviour
         rb.angularVelocity = 0f;
 
         coyoteTimer = 0f;
+        jumpBufferTimer = 0f;
+        holdJumpQueued = false;
+        runAnimationTimer = 0f;
         DetectGround();
         DetectWalls();
+        SetSprite(idleSprite);
         SetControlEnabled(true);
     }
 
     void HandleInput()
     {
         horizontal = 0;
-        jumpPressed = false;
+        bool jumpPressed = false;
 
         switch (controlType)
         {
@@ -156,6 +182,25 @@ public class PlayerController : MonoBehaviour
                 jumpHeld = Input.GetKey(KeyCode.I);
                 jumpPressed = Input.GetKeyDown(KeyCode.I);
                 break;
+        }
+
+        if (jumpPressed)
+        {
+            jumpBufferTimer = jumpBufferTime;
+        }
+        else if (holdJumpToBounce && jumpHeld && isGrounded && !holdJumpQueued)
+        {
+            jumpBufferTimer = jumpBufferTime;
+            holdJumpQueued = true;
+        }
+        else
+        {
+            jumpBufferTimer -= Time.deltaTime;
+        }
+
+        if (!jumpHeld || !isGrounded)
+        {
+            holdJumpQueued = false;
         }
     }
 
@@ -200,40 +245,55 @@ public class PlayerController : MonoBehaviour
 
     void HandleJump()
     {
-        if (!jumpPressed)
+        if (jumpBufferTimer <= 0f)
         {
             return;
         }
 
         if (coyoteTimer > 0)
         {
+            rb.velocity = new Vector2(rb.velocity.x, 0f);
             rb.velocity = new Vector2(rb.velocity.x, jumpForce);
-            coyoteTimer = 0;
+            coyoteTimer = 0f;
+            jumpBufferTimer = 0f;
+            isGrounded = false;
             return;
         }
 
         if (touchingWallLeft)
         {
             rb.velocity = new Vector2(wallJumpForceX, wallJumpForceY);
+            jumpBufferTimer = 0f;
             return;
         }
 
         if (touchingWallRight)
         {
             rb.velocity = new Vector2(-wallJumpForceX, wallJumpForceY);
+            jumpBufferTimer = 0f;
         }
     }
 
     void HandleMovement()
     {
-        if (isGrounded)
+        float targetSpeed = horizontal * moveSpeed;
+        float acceleration;
+
+        if (Mathf.Abs(targetSpeed) > 0.01f)
         {
-            rb.velocity = new Vector2(horizontal * moveSpeed, rb.velocity.y);
-            return;
+            acceleration = isGrounded ? groundAcceleration : airAcceleration;
+        }
+        else
+        {
+            acceleration = isGrounded ? groundDeceleration : airDeceleration;
         }
 
-        float targetSpeed = horizontal * moveSpeed;
-        float newX = Mathf.Lerp(rb.velocity.x, targetSpeed, airControl * Time.fixedDeltaTime);
+        float newX = Mathf.MoveTowards(
+            rb.velocity.x,
+            targetSpeed,
+            acceleration * Time.fixedDeltaTime
+        );
+
         rb.velocity = new Vector2(newX, rb.velocity.y);
     }
 
@@ -257,6 +317,11 @@ public class PlayerController : MonoBehaviour
             rb.velocity += Vector2.up * Physics2D.gravity.y *
                            (lowJumpMultiplier - 1) * Time.fixedDeltaTime;
         }
+
+        if (rb.velocity.y < -maxFallSpeed)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, -maxFallSpeed);
+        }
     }
 
     void HandleFlip()
@@ -269,6 +334,48 @@ public class PlayerController : MonoBehaviour
         {
             sr.flipX = false;
         }
+    }
+
+    void HandleAnimation()
+    {
+        if (sr == null)
+        {
+            return;
+        }
+
+        if (idleSprite == null)
+        {
+            idleSprite = sr.sprite;
+        }
+
+        bool hasRunAnimation = runSpriteA != null && runSpriteB != null;
+        bool shouldRunAnimate =
+            hasRunAnimation &&
+            canControl &&
+            isGrounded &&
+            Mathf.Abs(rb.velocity.x) > 0.1f &&
+            Mathf.Abs(horizontal) > 0.1f;
+
+        if (!shouldRunAnimate)
+        {
+            runAnimationTimer = 0f;
+            SetSprite(idleSprite);
+            return;
+        }
+
+        runAnimationTimer += Time.deltaTime * runAnimationSpeed;
+        bool useFirstFrame = Mathf.FloorToInt(runAnimationTimer) % 2 == 0;
+        SetSprite(useFirstFrame ? runSpriteA : runSpriteB);
+    }
+
+    void SetSprite(Sprite sprite)
+    {
+        if (sr == null || sprite == null || sr.sprite == sprite)
+        {
+            return;
+        }
+
+        sr.sprite = sprite;
     }
 
     void OnDrawGizmosSelected()
