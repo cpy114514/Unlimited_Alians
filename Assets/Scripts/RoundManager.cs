@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class RoundManager : MonoBehaviour
@@ -6,8 +7,23 @@ public class RoundManager : MonoBehaviour
     public static RoundManager Instance;
 
     public float nextRoundDelay = 3f;
+    public float finishScore = 1f;
+    public float firstFinishBonus = 0.75f;
+    public float coinBonus = 0.5f;
 
     bool roundEnding;
+
+    readonly HashSet<PlayerController.ControlType> finishedPlayers =
+        new HashSet<PlayerController.ControlType>();
+
+    readonly HashSet<PlayerController.ControlType> deadPlayers =
+        new HashSet<PlayerController.ControlType>();
+
+    readonly List<PlayerController.ControlType> finishOrder =
+        new List<PlayerController.ControlType>();
+
+    readonly Dictionary<PlayerController.ControlType, int> collectedCoins =
+        new Dictionary<PlayerController.ControlType, int>();
 
     void Awake()
     {
@@ -19,6 +35,7 @@ public class RoundManager : MonoBehaviour
 
         Instance = this;
         Time.timeScale = 1f;
+        ResetRoundState();
     }
 
     void OnDestroy()
@@ -30,48 +47,109 @@ public class RoundManager : MonoBehaviour
         }
     }
 
-    public void PlayerWin(PlayerController.ControlType player)
+    public void PlayerReachedFlag(PlayerController player, FinishFlag finishFlag)
     {
-        if (roundEnding)
+        if (roundEnding || player == null)
         {
             return;
         }
 
-        roundEnding = true;
+        PlayerController.ControlType controlType = player.controlType;
 
-        bool matchWon = false;
-
-        if (ScoreManager.Instance != null)
+        if (finishedPlayers.Contains(controlType) || deadPlayers.Contains(controlType))
         {
-            ScoreManager.Instance.AddScore(player);
-            matchWon = ScoreManager.Instance.GetScore(player) >= ScoreManager.WinningScore;
+            return;
         }
 
-        FinishRound(player, matchWon, false);
+        finishedPlayers.Add(controlType);
+        finishOrder.Add(controlType);
+
+        if (finishFlag != null)
+        {
+            finishFlag.MovePlayerToWaitingArea(player, finishOrder.Count - 1);
+        }
+
+        TryFinishRound();
     }
 
     public void PlayerDied(PlayerController.ControlType player)
     {
-        if (roundEnding || GameManager.Instance == null)
+        if (roundEnding || GameManager.Instance == null ||
+            finishedPlayers.Contains(player) || deadPlayers.Contains(player))
         {
             return;
         }
 
+        deadPlayers.Add(player);
         GameManager.Instance.MarkPlayerDead(player);
-
-        if (GameManager.Instance.GetAlivePlayerCount() == 0)
-        {
-            roundEnding = true;
-            FinishRound(null, false, true);
-        }
+        TryFinishRound();
     }
 
-    void FinishRound(
-        PlayerController.ControlType? winner,
-        bool matchWon,
-        bool noWinner
-    )
+    public bool IsPlayerResolved(PlayerController.ControlType player)
     {
+        return finishedPlayers.Contains(player) || deadPlayers.Contains(player);
+    }
+
+    public bool CanCollectCoin(PlayerController.ControlType player)
+    {
+        return !roundEnding &&
+               !finishedPlayers.Contains(player) &&
+               !deadPlayers.Contains(player);
+    }
+
+    public void PlayerCollectedCoin(PlayerController.ControlType player)
+    {
+        if (!CanCollectCoin(player))
+        {
+            return;
+        }
+
+        if (!collectedCoins.ContainsKey(player))
+        {
+            collectedCoins[player] = 0;
+        }
+
+        collectedCoins[player]++;
+    }
+
+    void TryFinishRound()
+    {
+        if (GameManager.Instance == null)
+        {
+            return;
+        }
+
+        int resolvedPlayers = finishedPlayers.Count + deadPlayers.Count;
+
+        if (resolvedPlayers < GameManager.Instance.GetSessionPlayerCount())
+        {
+            return;
+        }
+
+        FinishRound();
+    }
+
+    void FinishRound()
+    {
+        roundEnding = true;
+
+        bool noWinner = finishOrder.Count == 0;
+        bool matchWon = false;
+        PlayerController.ControlType? scoreboardWinner = noWinner
+            ? null
+            : finishOrder[0];
+
+        if (!noWinner && ScoreManager.Instance != null)
+        {
+            AwardRoundPoints();
+
+            if (ScoreManager.Instance.TryGetMatchWinner(GetScorePriorityOrder(), out var matchWinner))
+            {
+                scoreboardWinner = matchWinner;
+                matchWon = true;
+            }
+        }
+
         if (GameManager.Instance != null)
         {
             GameManager.Instance.SetAllPlayerControl(false);
@@ -88,7 +166,7 @@ public class RoundManager : MonoBehaviour
             }
             else
             {
-                board.ShowRoundResults(winner, matchWon);
+                board.ShowRoundResults(scoreboardWinner, matchWon);
             }
         }
 
@@ -111,12 +189,82 @@ public class RoundManager : MonoBehaviour
         }
 
         Time.timeScale = 1f;
+        ResetRoundState();
+        ResetCoins();
 
         if (GameManager.Instance != null)
         {
             GameManager.Instance.ResetRound();
         }
+    }
 
+    void AwardRoundPoints()
+    {
+        for (int i = 0; i < finishOrder.Count; i++)
+        {
+            PlayerController.ControlType player = finishOrder[i];
+            float awardedScore = finishScore + GetCoinScore(player);
+
+            if (i == 0)
+            {
+                awardedScore += firstFinishBonus;
+            }
+
+            ScoreManager.Instance.AddScore(player, awardedScore);
+        }
+    }
+
+    float GetCoinScore(PlayerController.ControlType player)
+    {
+        if (!collectedCoins.TryGetValue(player, out int coinCount))
+        {
+            return 0f;
+        }
+
+        return coinCount * coinBonus;
+    }
+
+    List<PlayerController.ControlType> GetScorePriorityOrder()
+    {
+        List<PlayerController.ControlType> priorityOrder =
+            new List<PlayerController.ControlType>(finishOrder);
+
+        if (GameManager.Instance != null)
+        {
+            foreach (PlayerController.ControlType player in GameManager.Instance.GetSessionPlayers())
+            {
+                if (!priorityOrder.Contains(player))
+                {
+                    priorityOrder.Add(player);
+                }
+            }
+        }
+
+        return priorityOrder;
+    }
+
+    void ResetRoundState()
+    {
         roundEnding = false;
+        finishedPlayers.Clear();
+        deadPlayers.Clear();
+        finishOrder.Clear();
+        collectedCoins.Clear();
+
+        foreach (PlayerController.ControlType type in
+                 System.Enum.GetValues(typeof(PlayerController.ControlType)))
+        {
+            collectedCoins[type] = 0;
+        }
+    }
+
+    void ResetCoins()
+    {
+        CoinPickup[] coins = FindObjectsOfType<CoinPickup>(true);
+
+        foreach (CoinPickup coin in coins)
+        {
+            coin.ResetCoin();
+        }
     }
 }

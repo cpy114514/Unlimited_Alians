@@ -145,6 +145,19 @@ public class GameManager : MonoBehaviour
         playersByType[player] = null;
     }
 
+    public int GetSessionPlayerCount()
+    {
+        return sessionPlayers.Count;
+    }
+
+    public bool TryGetPlayer(
+        PlayerController.ControlType type,
+        out PlayerController player
+    )
+    {
+        return playersByType.TryGetValue(type, out player) && player != null;
+    }
+
     public int GetAlivePlayerCount()
     {
         int alivePlayers = 0;

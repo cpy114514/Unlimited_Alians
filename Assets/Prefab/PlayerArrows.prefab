@@ -103,6 +103,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 65226181c50c1524ba8a76c63dc28855, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  canControl: 1
   controlType: 1
   moveSpeed: 7.25
   airControl: 5
@@ -111,7 +112,7 @@ MonoBehaviour:
   airAcceleration: 55
   airDeceleration: 35
   maxFallSpeed: 20
-  jumpForce: 11.5
+  jumpForce: 10
   fallMultiplier: 4.2
   lowJumpMultiplier: 6
   jumpBufferTime: 0.12

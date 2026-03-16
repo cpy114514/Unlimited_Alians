@@ -13,7 +13,7 @@ public class ScoreboardUI : MonoBehaviour
     public TextMeshProUGUI ijklText;
 
     [Header("Horizontal Bar")]
-    public int targetScore = ScoreManager.WinningScore;
+    public int targetScore = 6;
     public float rowSpacing = 96f;
     public float barWidth = 560f;
     public float barHeight = 44f;
@@ -387,12 +387,13 @@ public class ScoreboardUI : MonoBehaviour
         foreach (PlayerController.ControlType type in visiblePlayers)
         {
             float currentWidth = barFills[type].sizeDelta.x;
-            int score = Mathf.Clamp(ScoreManager.Instance.scores[type], 0, targetScore);
-            float targetWidth = barWidth * score / Mathf.Max(1f, targetScore);
+            float score = Mathf.Max(0f, ScoreManager.Instance.scores[type]);
+            float clampedScore = Mathf.Clamp(score, 0f, targetScore);
+            float targetWidth = barWidth * clampedScore / Mathf.Max(1f, targetScore);
 
             startWidths[type] = currentWidth;
             targetWidths[type] = targetWidth;
-            scoreTexts[type].text = score + "/" + targetScore;
+            scoreTexts[type].text = FormatScore(score) + "/" + FormatScore(targetScore);
         }
 
         float elapsed = 0f;
@@ -471,5 +472,15 @@ public class ScoreboardUI : MonoBehaviour
         }
 
         return Color.white;
+    }
+
+    string FormatScore(float score)
+    {
+        if (Mathf.Approximately(score, Mathf.Round(score)))
+        {
+            return Mathf.RoundToInt(score).ToString();
+        }
+
+        return score.ToString("0.##");
     }
 }

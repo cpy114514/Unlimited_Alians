@@ -8,6 +8,12 @@ public class KillBlock : MonoBehaviour
 
         if (player != null)
         {
+            if (RoundManager.Instance != null &&
+                RoundManager.Instance.IsPlayerResolved(player.controlType))
+            {
+                return;
+            }
+
             if (RoundManager.Instance != null)
             {
                 RoundManager.Instance.PlayerDied(player.controlType);

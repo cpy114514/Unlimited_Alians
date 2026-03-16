@@ -155,6 +155,13 @@ public class PlayerController : MonoBehaviour
         SetControlEnabled(true);
     }
 
+    public void MoveToWaitingArea(Vector3 position)
+    {
+        transform.position = position;
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+    }
+
     void HandleInput()
     {
         horizontal = 0;
