@@ -449,11 +449,11 @@ public class ScoreboardUI : MonoBehaviour
         switch (type)
         {
             case PlayerController.ControlType.WASD:
-                return "P1";
+                return "Green";
             case PlayerController.ControlType.IJKL:
-                return "P2";
+                return "Blue";
             case PlayerController.ControlType.ArrowKeys:
-                return "P3";
+                return "Yellow";
         }
 
         return type.ToString();

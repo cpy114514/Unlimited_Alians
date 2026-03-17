@@ -63,10 +63,14 @@ public class PlayerController : MonoBehaviour
     float horizontal;
     bool jumpHeld;
     bool holdJumpQueued;
+    bool buildPhaseFrozen;
 
     bool isGrounded;
     bool touchingWallLeft;
     bool touchingWallRight;
+    Trampoline groundedTrampoline;
+    Trampoline contactedTrampoline;
+    float trampolineContactExpiryTime;
 
     float coyoteTimer;
     float jumpBufferTimer;
@@ -85,6 +89,12 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
+        if (buildPhaseFrozen)
+        {
+            ClearInput();
+            return;
+        }
+
         if (!canControl)
         {
             ClearInput();
@@ -96,12 +106,18 @@ public class PlayerController : MonoBehaviour
         HandleInput();
         HandleCoyoteTime();
         HandleJump();
+        HandleTrampolineAutoBounce();
         HandleFlip();
         HandleAnimation();
     }
 
     void FixedUpdate()
     {
+        if (buildPhaseFrozen)
+        {
+            return;
+        }
+
         if (!canControl)
         {
             if (rb.velocity != Vector2.zero)
@@ -123,6 +139,9 @@ public class PlayerController : MonoBehaviour
         jumpHeld = false;
         holdJumpQueued = false;
         jumpBufferTimer = 0f;
+        groundedTrampoline = null;
+        contactedTrampoline = null;
+        trampolineContactExpiryTime = 0f;
     }
 
     public void SetControlEnabled(bool enabled)
@@ -137,8 +156,31 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    public void SetBuildPhaseFrozen(bool frozen)
+    {
+        buildPhaseFrozen = frozen;
+        ClearInput();
+
+        if (rb == null)
+        {
+            return;
+        }
+
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+        rb.simulated = !frozen;
+
+        if (!frozen)
+        {
+            DetectGround();
+            DetectWalls();
+            SetSprite(idleSprite);
+        }
+    }
+
     public void ResetForNextRound(Vector3 spawnPosition)
     {
+        SetBuildPhaseFrozen(false);
         transform.position = spawnPosition;
         transform.rotation = Quaternion.identity;
 
@@ -160,6 +202,59 @@ public class PlayerController : MonoBehaviour
         transform.position = position;
         rb.velocity = Vector2.zero;
         rb.angularVelocity = 0f;
+    }
+
+    public float VerticalVelocity
+    {
+        get { return rb != null ? rb.velocity.y : 0f; }
+    }
+
+    public void Bounce(float upwardForce)
+    {
+        if (rb == null)
+        {
+            return;
+        }
+
+        rb.velocity = new Vector2(rb.velocity.x, 0f);
+        rb.velocity = new Vector2(rb.velocity.x, upwardForce);
+        isGrounded = false;
+        coyoteTimer = 0f;
+        jumpBufferTimer = 0f;
+        holdJumpQueued = false;
+        groundedTrampoline = null;
+        contactedTrampoline = null;
+        trampolineContactExpiryTime = 0f;
+    }
+
+    public void Launch(Vector2 velocity)
+    {
+        if (rb == null)
+        {
+            return;
+        }
+
+        rb.velocity = Vector2.zero;
+        rb.velocity = velocity;
+        isGrounded = false;
+        coyoteTimer = 0f;
+        jumpBufferTimer = 0f;
+        holdJumpQueued = false;
+        groundedTrampoline = null;
+        contactedTrampoline = null;
+        trampolineContactExpiryTime = 0f;
+    }
+
+    public void RegisterTrampolineContact(Trampoline trampoline)
+    {
+        if (trampoline == null || !canControl || buildPhaseFrozen)
+        {
+            return;
+        }
+
+        contactedTrampoline = trampoline;
+        groundedTrampoline = trampoline;
+        trampolineContactExpiryTime = Time.time + 0.12f;
     }
 
     void HandleInput()
@@ -213,12 +308,17 @@ public class PlayerController : MonoBehaviour
 
     void DetectGround()
     {
-        isGrounded = Physics2D.Raycast(
+        RaycastHit2D groundHit = Physics2D.Raycast(
             groundCheck.position,
             Vector2.down,
             groundCheckDistance,
             groundLayer
         );
+
+        isGrounded = groundHit.collider != null;
+        groundedTrampoline = isGrounded
+            ? groundHit.collider.GetComponentInParent<Trampoline>()
+            : null;
     }
 
     void DetectWalls()
@@ -257,6 +357,16 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        if (TryGetActiveTrampoline(out Trampoline activeTrampoline) &&
+            activeTrampoline.TryTriggerAutoBounce(this))
+        {
+            coyoteTimer = 0f;
+            jumpBufferTimer = 0f;
+            isGrounded = false;
+            groundedTrampoline = null;
+            return;
+        }
+
         if (coyoteTimer > 0)
         {
             rb.velocity = new Vector2(rb.velocity.x, 0f);
@@ -279,6 +389,47 @@ public class PlayerController : MonoBehaviour
             rb.velocity = new Vector2(-wallJumpForceX, wallJumpForceY);
             jumpBufferTimer = 0f;
         }
+    }
+
+    void HandleTrampolineAutoBounce()
+    {
+        if (!TryGetActiveTrampoline(out Trampoline activeTrampoline))
+        {
+            return;
+        }
+
+        if (jumpBufferTimer > 0f)
+        {
+            return;
+        }
+
+        if (VerticalVelocity > 0.05f)
+        {
+            return;
+        }
+
+        activeTrampoline.TryTriggerAutoBounce(this);
+    }
+
+    bool TryGetActiveTrampoline(out Trampoline trampoline)
+    {
+        trampoline = null;
+
+        if (groundedTrampoline != null)
+        {
+            contactedTrampoline = groundedTrampoline;
+            trampolineContactExpiryTime = Time.time + 0.12f;
+        }
+
+        if (contactedTrampoline == null || Time.time > trampolineContactExpiryTime)
+        {
+            groundedTrampoline = null;
+            contactedTrampoline = null;
+            return false;
+        }
+
+        trampoline = contactedTrampoline;
+        return true;
     }
 
     void HandleMovement()

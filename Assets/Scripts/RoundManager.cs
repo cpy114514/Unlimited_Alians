@@ -63,12 +63,14 @@ public class RoundManager : MonoBehaviour
 
         finishedPlayers.Add(controlType);
         finishOrder.Add(controlType);
+        player.SetControlEnabled(false);
 
         if (finishFlag != null)
         {
             finishFlag.MovePlayerToWaitingArea(player, finishOrder.Count - 1);
         }
 
+        ConsumeHeldCoins(controlType);
         TryFinishRound();
     }
 
@@ -81,6 +83,7 @@ public class RoundManager : MonoBehaviour
         }
 
         deadPlayers.Add(player);
+        ClearHeldCoins(player);
         GameManager.Instance.MarkPlayerDead(player);
         TryFinishRound();
     }
@@ -196,6 +199,11 @@ public class RoundManager : MonoBehaviour
         {
             GameManager.Instance.ResetRound();
         }
+
+        if (BuildPhaseManager.Instance != null)
+        {
+            BuildPhaseManager.Instance.BeginRoundSetup(matchWon);
+        }
     }
 
     void AwardRoundPoints()
@@ -265,6 +273,29 @@ public class RoundManager : MonoBehaviour
         foreach (CoinPickup coin in coins)
         {
             coin.ResetCoin();
+        }
+    }
+
+    void ConsumeHeldCoins(PlayerController.ControlType player)
+    {
+        CoinPickup[] coins = FindObjectsOfType<CoinPickup>(true);
+
+        foreach (CoinPickup coin in coins)
+        {
+            if (coin.IsHeldBy(player))
+            {
+                coin.ConsumeAtFinish();
+            }
+        }
+    }
+
+    void ClearHeldCoins(PlayerController.ControlType player)
+    {
+        CoinPickup[] coins = FindObjectsOfType<CoinPickup>(true);
+
+        foreach (CoinPickup coin in coins)
+        {
+            coin.ClearHeldState(player);
         }
     }
 }

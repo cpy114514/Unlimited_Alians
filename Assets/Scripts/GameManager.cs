@@ -1,5 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 public class GameManager : MonoBehaviour
 {
@@ -18,6 +21,11 @@ public class GameManager : MonoBehaviour
 
     public Transform[] spawnPoints;
 
+    [Header("Build Phase")]
+    public Vector2Int buildMinPlacementCell = new Vector2Int(-4, -10);
+    public Vector2Int buildMaxPlacementCell = new Vector2Int(39, 8);
+    public Vector2 buildExclusionHalfExtents = new Vector2(1.5f, 1.5f);
+
     readonly Dictionary<PlayerController.ControlType, PlayerController> playersByType =
         new Dictionary<PlayerController.ControlType, PlayerController>();
 
@@ -33,12 +41,22 @@ public class GameManager : MonoBehaviour
         }
 
         Instance = this;
+
+        if (GetComponent<BuildPhaseManager>() == null)
+        {
+            gameObject.AddComponent<BuildPhaseManager>();
+        }
     }
 
     void Start()
     {
         InitializeSessionPlayers();
         SpawnMissingPlayersAtSpawns();
+
+        if (BuildPhaseManager.Instance != null)
+        {
+            BuildPhaseManager.Instance.BeginRoundSetup(false);
+        }
     }
 
     void OnDestroy()
@@ -181,6 +199,108 @@ public class GameManager : MonoBehaviour
     public List<PlayerController.ControlType> GetSessionPlayers()
     {
         return new List<PlayerController.ControlType>(sessionPlayers);
+    }
+
+    public void GetBuildPlacementConfig(
+        out Vector2Int minPlacementCell,
+        out Vector2Int maxPlacementCell,
+        out Vector2 exclusionHalfExtents
+    )
+    {
+        minPlacementCell = buildMinPlacementCell;
+        maxPlacementCell = buildMaxPlacementCell;
+        exclusionHalfExtents = buildExclusionHalfExtents;
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        DrawBuildPlacementBoundsGizmo();
+        DrawProtectedZoneGizmos();
+    }
+
+    void DrawBuildPlacementBoundsGizmo()
+    {
+        Vector2Int minCell = new Vector2Int(
+            Mathf.Min(buildMinPlacementCell.x, buildMaxPlacementCell.x),
+            Mathf.Min(buildMinPlacementCell.y, buildMaxPlacementCell.y)
+        );
+        Vector2Int maxCell = new Vector2Int(
+            Mathf.Max(buildMinPlacementCell.x, buildMaxPlacementCell.x),
+            Mathf.Max(buildMinPlacementCell.y, buildMaxPlacementCell.y)
+        );
+
+        Vector3 size = new Vector3(
+            maxCell.x - minCell.x + 1f,
+            maxCell.y - minCell.y + 1f,
+            0f
+        );
+        Vector3 center = new Vector3(
+            minCell.x + size.x * 0.5f,
+            minCell.y + size.y * 0.5f,
+            0f
+        );
+
+        Gizmos.color = new Color(0.18f, 0.95f, 0.88f, 0.2f);
+        Gizmos.DrawCube(center, size);
+        Gizmos.color = new Color(0.18f, 0.95f, 0.88f, 0.95f);
+        Gizmos.DrawWireCube(center, size);
+
+#if UNITY_EDITOR
+        Handles.color = new Color(0.18f, 0.95f, 0.88f, 0.95f);
+        Handles.Label(
+            center + new Vector3(0f, size.y * 0.5f + 0.35f, 0f),
+            "Build Range"
+        );
+#endif
+    }
+
+    void DrawProtectedZoneGizmos()
+    {
+        Vector3 zoneSize = new Vector3(
+            Mathf.Max(0f, buildExclusionHalfExtents.x) * 2f,
+            Mathf.Max(0f, buildExclusionHalfExtents.y) * 2f,
+            0f
+        );
+
+        if (zoneSize.x <= 0f || zoneSize.y <= 0f)
+        {
+            return;
+        }
+
+        if (spawnPoints != null)
+        {
+            for (int i = 0; i < spawnPoints.Length; i++)
+            {
+                if (spawnPoints[i] == null)
+                {
+                    continue;
+                }
+
+                DrawProtectedZone(spawnPoints[i].position, zoneSize, "Spawn Block");
+            }
+        }
+
+        FinishFlag finishFlag = FindObjectOfType<FinishFlag>(true);
+        if (finishFlag != null)
+        {
+            DrawProtectedZone(finishFlag.transform.position, zoneSize, "Finish Block");
+        }
+    }
+
+    void DrawProtectedZone(Vector3 center, Vector3 size, string label)
+    {
+        Gizmos.color = new Color(1f, 0.42f, 0.24f, 0.18f);
+        Gizmos.DrawCube(center, size);
+        Gizmos.color = new Color(1f, 0.42f, 0.24f, 0.95f);
+        Gizmos.DrawWireCube(center, size);
+
+#if UNITY_EDITOR
+        Handles.color = new Color(1f, 0.42f, 0.24f, 0.95f);
+        Handles.Label(
+            center + new Vector3(0f, size.y * 0.5f + 0.18f, 0f),
+            label
+        );
+#endif
     }
 
     GameObject GetPrefab(PlayerController.ControlType type)
