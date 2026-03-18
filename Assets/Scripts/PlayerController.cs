@@ -358,12 +358,13 @@ public class PlayerController : MonoBehaviour
         }
 
         if (TryGetActiveTrampoline(out Trampoline activeTrampoline) &&
-            activeTrampoline.TryTriggerAutoBounce(this))
+            activeTrampoline.TryTriggerGroundJumpBoost(this, jumpForce))
         {
             coyoteTimer = 0f;
             jumpBufferTimer = 0f;
             isGrounded = false;
             groundedTrampoline = null;
+            contactedTrampoline = null;
             return;
         }
 

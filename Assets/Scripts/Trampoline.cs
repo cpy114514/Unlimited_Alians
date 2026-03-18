@@ -16,7 +16,9 @@ public class Trampoline : MonoBehaviour
 
     SpriteRenderer spriteRenderer;
     BoxCollider2D bodyCollider;
+    BoxCollider2D groundSupportCollider;
     BoxCollider2D bounceTrigger;
+    GameObject groundSupportObject;
     TrampolineBounceTrigger bounceTriggerRelay;
     readonly Dictionary<PlayerController, float> lastBounceTimes =
         new Dictionary<PlayerController, float>();
@@ -28,6 +30,7 @@ public class Trampoline : MonoBehaviour
         spriteRenderer = GetComponent<SpriteRenderer>();
         CacheCollider();
         ConfigureCollider();
+        EnsureGroundSupportCollider();
         EnsureBounceTrigger();
         UpdateSprite();
     }
@@ -50,19 +53,21 @@ public class Trampoline : MonoBehaviour
         return TryLaunch(player, bounceForce);
     }
 
-    public bool TryTriggerGroundJumpBoost(PlayerController player)
+    public bool TryTriggerGroundJumpBoost(PlayerController player, float playerJumpForce)
     {
-        return TryLaunch(player, bounceForce);
+        float assistedForce = bounceForce + Mathf.Max(0f, playerJumpForce) * 0.1f;
+        return TryLaunch(player, assistedForce, true);
     }
 
-    bool TryLaunch(PlayerController player, float force)
+    bool TryLaunch(PlayerController player, float force, bool ignoreCooldown = false)
     {
         if (player == null || !player.canControl)
         {
             return false;
         }
 
-        if (lastBounceTimes.TryGetValue(player, out float lastBounceTime) &&
+        if (!ignoreCooldown &&
+            lastBounceTimes.TryGetValue(player, out float lastBounceTime) &&
             Time.time - lastBounceTime < bounceCooldown)
         {
             return false;
@@ -90,7 +95,30 @@ public class Trampoline : MonoBehaviour
             return;
         }
 
+        if (!IsPlayerAboveBounceFace(other))
+        {
+            return;
+        }
+
         player.RegisterTrampolineContact(this);
+    }
+
+    bool IsPlayerAboveBounceFace(Collider2D other)
+    {
+        if (other == null)
+        {
+            return false;
+        }
+
+        Vector2 localCenter = transform.InverseTransformPoint(other.bounds.center);
+        float localSurfaceY = bodyOffset.y + bodySize.y * 0.5f;
+        float localHalfWidth = bodySize.x * 0.5f;
+        float sideTolerance = 0.1f;
+        float topTolerance = 0.1f;
+
+        bool aboveTop = localCenter.y >= localSurfaceY + topTolerance;
+        bool withinBodyWidth = Mathf.Abs(localCenter.x - bodyOffset.x) <= localHalfWidth + sideTolerance;
+        return aboveTop && withinBodyWidth;
     }
 
     void CacheCollider()
@@ -107,10 +135,40 @@ public class Trampoline : MonoBehaviour
     {
         if (bodyCollider != null)
         {
-            bodyCollider.isTrigger = false;
+            // Keep the root object on Default and let the ground child handle
+            // normal "block" collisions so player ground checks still work.
+            bodyCollider.enabled = false;
+            bodyCollider.isTrigger = true;
             bodyCollider.size = bodySize;
             bodyCollider.offset = bodyOffset;
         }
+    }
+
+    void EnsureGroundSupportCollider()
+    {
+        if (groundSupportObject == null)
+        {
+            Transform existing = transform.Find("GroundSupport");
+            groundSupportObject = existing != null ? existing.gameObject : null;
+        }
+
+        if (groundSupportObject == null)
+        {
+            groundSupportObject = new GameObject("GroundSupport");
+            groundSupportObject.transform.SetParent(transform, false);
+        }
+
+        groundSupportCollider = groundSupportObject.GetComponent<BoxCollider2D>();
+        if (groundSupportCollider == null)
+        {
+            groundSupportCollider = groundSupportObject.AddComponent<BoxCollider2D>();
+        }
+
+        groundSupportCollider.enabled = true;
+        groundSupportCollider.isTrigger = false;
+        groundSupportCollider.size = bodySize;
+        groundSupportCollider.offset = bodyOffset;
+        groundSupportObject.layer = GetGroundLayer();
     }
 
     void EnsureBounceTrigger()
@@ -144,6 +202,12 @@ public class Trampoline : MonoBehaviour
         bounceTrigger.size = triggerSize;
         bounceTrigger.offset = triggerOffset;
         triggerObject.layer = gameObject.layer;
+    }
+
+    int GetGroundLayer()
+    {
+        int groundLayer = LayerMask.NameToLayer("Ground");
+        return groundLayer >= 0 ? groundLayer : 6;
     }
 
     void UpdateSprite()

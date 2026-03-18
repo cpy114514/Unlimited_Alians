@@ -146,7 +146,7 @@ MonoBehaviour:
   idleSprite: {fileID: 875808838, guid: 3f2367fd9bbe2474a955f54217e6e9a9, type: 3}
   bounceSprite: {fileID: -1251434613, guid: 3f2367fd9bbe2474a955f54217e6e9a9, type: 3}
   bounceForce: 13
-  jumpBoostForce: 17
+  jumpBoostForce: 11
   bounceCooldown: 0.2
   pressedDuration: 0.12
   bodySize: {x: 0.96, y: 0.46}

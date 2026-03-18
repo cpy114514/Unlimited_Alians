@@ -21,6 +21,7 @@ public class BuildPhaseManager : MonoBehaviour
     {
         Coin,
         Trampoline,
+        Launcher,
         Block1x1,
         Block1x2,
         Block1x3,
@@ -42,6 +43,7 @@ public class BuildPhaseManager : MonoBehaviour
         public Vector2Int[] cells;
         public bool isCoin;
         public bool isTrampoline;
+        public bool isLauncher;
     }
 
     class PoolEntry
@@ -110,6 +112,8 @@ public class BuildPhaseManager : MonoBehaviour
     GameObject coinPrefabAsset;
     Trampoline trampolineTemplate;
     GameObject trampolinePrefabAsset;
+    FireballLauncher launcherTemplate;
+    GameObject launcherPrefabAsset;
     BuildItemDefinition defaultPlacementDefinition;
     GameObject placementGridRoot;
     Material placementGridMaterial;
@@ -229,6 +233,7 @@ public class BuildPhaseManager : MonoBehaviour
 
         AddCatalogItem(BuildItemKind.Coin, "Coin", true, false, new[] { new Vector2Int(0, 0) });
         AddCatalogItem(BuildItemKind.Trampoline, "Trampoline", false, true, new[] { new Vector2Int(0, 0) });
+        AddCatalogItem(BuildItemKind.Launcher, "Launcher", false, false, new[] { new Vector2Int(0, 0) }, true);
         AddRectangle(BuildItemKind.Block1x1, "Block 1x1", 1, 1);
         AddRectangle(BuildItemKind.Block1x2, "Block 1x2", 1, 2);
         AddRectangle(BuildItemKind.Block1x3, "Block 1x3", 1, 3);
@@ -261,8 +266,8 @@ public class BuildPhaseManager : MonoBehaviour
                 new Vector2Int(0, 0),
                 new Vector2Int(0, 1),
                 new Vector2Int(0, 2),
-                new Vector2Int(0, 3),
-                new Vector2Int(1, 0)
+                new Vector2Int(1, 0),
+                new Vector2Int(2, 0)
             }
         );
         AddCatalogItem(
@@ -301,7 +306,8 @@ public class BuildPhaseManager : MonoBehaviour
         string name,
         bool isCoin,
         bool isTrampoline,
-        Vector2Int[] cells
+        Vector2Int[] cells,
+        bool isLauncher = false
     )
     {
         BuildItemDefinition definition = new BuildItemDefinition
@@ -310,6 +316,7 @@ public class BuildPhaseManager : MonoBehaviour
             displayName = name,
             isCoin = isCoin,
             isTrampoline = isTrampoline,
+            isLauncher = isLauncher,
             cells = cells
         };
 
@@ -365,6 +372,16 @@ public class BuildPhaseManager : MonoBehaviour
         if (trampolineTemplate == null && trampolinePrefabAsset != null)
         {
             trampolineTemplate = trampolinePrefabAsset.GetComponent<Trampoline>();
+        }
+
+        if (launcherPrefabAsset == null)
+        {
+            launcherPrefabAsset = TryLoadFireballLauncherPrefab();
+        }
+
+        if (launcherTemplate == null && launcherPrefabAsset != null)
+        {
+            launcherTemplate = launcherPrefabAsset.GetComponent<FireballLauncher>();
         }
 
         if (coinTemplate == null)
@@ -560,8 +577,15 @@ public class BuildPhaseManager : MonoBehaviour
             DrawSelectionMarkers(cardRect, i);
 
             PoolEntry entry = currentPool[i];
+            DrawCardPreview(cardRect, entry.definition);
             string ownerText = entry.owner.HasValue ? "\n" + GetDisplayName(entry.owner.Value) : string.Empty;
-            GUI.Label(cardRect, entry.definition.displayName + ownerText, cardGuiStyle);
+            Rect labelRect = new Rect(
+                cardRect.x + 10f,
+                cardRect.y + 70f,
+                cardRect.width - 20f,
+                cardRect.height - 78f
+            );
+            GUI.Label(labelRect, entry.definition.displayName + ownerText, cardGuiStyle);
         }
 
         DrawStatusBar(false);
@@ -605,6 +629,131 @@ public class BuildPhaseManager : MonoBehaviour
             Texture2D.whiteTexture
         );
         GUI.color = previousColor;
+    }
+
+    void DrawCardPreview(Rect cardRect, BuildItemDefinition definition)
+    {
+        Rect previewRect = new Rect(
+            cardRect.x + 14f,
+            cardRect.y + 14f,
+            cardRect.width - 28f,
+            46f
+        );
+
+        if (definition.isCoin)
+        {
+            DrawSpritePreview(previewRect, coinTemplate != null ? coinTemplate.frameA : null, Color.white);
+            return;
+        }
+
+        if (definition.isTrampoline)
+        {
+            DrawSpritePreview(previewRect, trampolineTemplate != null ? trampolineTemplate.idleSprite : null, Color.white);
+            return;
+        }
+
+        if (definition.isLauncher)
+        {
+            DrawSpritePreview(previewRect, launcherTemplate != null ? launcherTemplate.launcherSprite : null, Color.white);
+            return;
+        }
+
+        DrawBlockShapePreview(previewRect, definition.cells);
+    }
+
+    void DrawSpritePreview(Rect previewRect, Sprite sprite, Color tint)
+    {
+        Color previousColor = GUI.color;
+        GUI.color = tint;
+
+        if (sprite != null && sprite.texture != null)
+        {
+            GUI.DrawTextureWithTexCoords(
+                FitRectToSprite(previewRect, sprite),
+                sprite.texture,
+                GetSpriteUv(sprite)
+            );
+        }
+        else
+        {
+            GUI.DrawTexture(previewRect, Texture2D.whiteTexture);
+        }
+
+        GUI.color = previousColor;
+    }
+
+    void DrawBlockShapePreview(Rect previewRect, Vector2Int[] cells)
+    {
+        if (cells == null || cells.Length == 0)
+        {
+            return;
+        }
+
+        int minX = int.MaxValue;
+        int minY = int.MaxValue;
+        int maxX = int.MinValue;
+        int maxY = int.MinValue;
+
+        foreach (Vector2Int cell in cells)
+        {
+            minX = Mathf.Min(minX, cell.x);
+            minY = Mathf.Min(minY, cell.y);
+            maxX = Mathf.Max(maxX, cell.x);
+            maxY = Mathf.Max(maxY, cell.y);
+        }
+
+        int width = maxX - minX + 1;
+        int height = maxY - minY + 1;
+        float cellSize = Mathf.Min(previewRect.width / width, previewRect.height / height);
+        float totalWidth = width * cellSize;
+        float totalHeight = height * cellSize;
+        float originX = previewRect.x + (previewRect.width - totalWidth) * 0.5f;
+        float originY = previewRect.y + (previewRect.height - totalHeight) * 0.5f;
+
+        foreach (Vector2Int cell in cells)
+        {
+            float x = originX + (cell.x - minX) * cellSize;
+            float y = originY + (maxY - cell.y) * cellSize;
+            Rect cellRect = new Rect(x + 1f, y + 1f, cellSize - 2f, cellSize - 2f);
+            DrawSpritePreview(cellRect, blockSprite, new Color(0.95f, 0.93f, 0.88f, 1f));
+        }
+    }
+
+    Rect FitRectToSprite(Rect target, Sprite sprite)
+    {
+        if (sprite == null)
+        {
+            return target;
+        }
+
+        float spriteAspect = sprite.rect.width / Mathf.Max(1f, sprite.rect.height);
+        float targetAspect = target.width / Mathf.Max(1f, target.height);
+
+        if (spriteAspect > targetAspect)
+        {
+            float height = target.width / spriteAspect;
+            return new Rect(target.x, target.y + (target.height - height) * 0.5f, target.width, height);
+        }
+
+        float width = target.height * spriteAspect;
+        return new Rect(target.x + (target.width - width) * 0.5f, target.y, width, target.height);
+    }
+
+    Rect GetSpriteUv(Sprite sprite)
+    {
+        if (sprite == null || sprite.texture == null)
+        {
+            return new Rect(0f, 0f, 1f, 1f);
+        }
+
+        Rect rect = sprite.rect;
+        Texture texture = sprite.texture;
+        return new Rect(
+            rect.x / texture.width,
+            rect.y / texture.height,
+            rect.width / texture.width,
+            rect.height / texture.height
+        );
     }
 
     void DrawSelectionMarkers(Rect cardRect, int index)
@@ -901,9 +1050,11 @@ public class BuildPhaseManager : MonoBehaviour
                 changed = true;
             }
 
+            PoolEntry entry = currentPool[state.selectedEntryIndex];
+
             if (GetRotatePressed(state.controlType))
             {
-                state.rotation = (state.rotation + 1) % 4;
+                state.rotation = GetNextPlacementRotation(entry.definition, state.rotation);
                 changed = true;
             }
 
@@ -918,7 +1069,6 @@ public class BuildPhaseManager : MonoBehaviour
                 continue;
             }
 
-            PoolEntry entry = currentPool[state.selectedEntryIndex];
             Vector2Int[] cells = GetPlacedCells(entry.definition, state.rotation, state.placementCell);
             if (!CanPlaceCells(cells, entry.definition))
             {
@@ -1233,6 +1383,16 @@ public class BuildPhaseManager : MonoBehaviour
         return false;
     }
 
+    int GetNextPlacementRotation(BuildItemDefinition definition, int currentRotation)
+    {
+        if (definition != null && definition.isLauncher)
+        {
+            return currentRotation == 0 ? 2 : 0;
+        }
+
+        return (currentRotation + 1) % 4;
+    }
+
     bool AreAllPlayersSelected()
     {
         foreach (PlayerBuildState state in playerStates.Values)
@@ -1294,6 +1454,17 @@ public class BuildPhaseManager : MonoBehaviour
             if (trampolineTemplate != null)
             {
                 child.GetComponent<SpriteRenderer>().sprite = trampolineTemplate.idleSprite;
+            }
+        }
+        else if (entry.definition.isLauncher)
+        {
+            GameObject child = CreatePreviewCell(root.transform, state.placementCell, state.controlType, valid);
+            child.transform.rotation = Quaternion.identity;
+            if (launcherTemplate != null)
+            {
+                SpriteRenderer renderer = child.GetComponent<SpriteRenderer>();
+                renderer.sprite = launcherTemplate.launcherSprite;
+                renderer.flipX = IsLauncherFacingRight(state.rotation);
             }
         }
         else
@@ -1563,6 +1734,10 @@ public class BuildPhaseManager : MonoBehaviour
         {
             placedObject = PlaceTrampoline(cells[0], state.rotation);
         }
+        else if (definition.isLauncher)
+        {
+            placedObject = PlaceLauncher(cells[0], state.rotation);
+        }
         else
         {
             placedObject = PlaceBlockShape(definition.displayName, cells);
@@ -1656,6 +1831,44 @@ public class BuildPhaseManager : MonoBehaviour
         return trampolineObject;
     }
 
+    GameObject PlaceLauncher(Vector2Int cell, int rotation)
+    {
+        Vector2 worldPosition = CellToWorld(cell);
+        bool facingRight = IsLauncherFacingRight(rotation);
+
+        if (launcherPrefabAsset == null)
+        {
+            launcherPrefabAsset = TryLoadFireballLauncherPrefab();
+        }
+
+        if (launcherPrefabAsset != null)
+        {
+            GameObject placedLauncher = Instantiate(launcherPrefabAsset, worldPosition, Quaternion.identity);
+            FireballLauncher launcher = placedLauncher.GetComponent<FireballLauncher>();
+            if (launcher != null)
+            {
+                launcher.SetFacingRight(facingRight);
+            }
+            ApplyBuildSurfaceLayer(placedLauncher);
+            return placedLauncher;
+        }
+
+        if (launcherTemplate != null)
+        {
+            FireballLauncher placedLauncher = Instantiate(launcherTemplate, worldPosition, Quaternion.identity);
+            placedLauncher.SetFacingRight(facingRight);
+            ApplyBuildSurfaceLayer(placedLauncher.gameObject);
+            return placedLauncher.gameObject;
+        }
+
+        return null;
+    }
+
+    bool IsLauncherFacingRight(int rotation)
+    {
+        return rotation == 2;
+    }
+
     Quaternion GetPlacementRotation(int rotation)
     {
         return Quaternion.Euler(0f, 0f, -90f * rotation);
@@ -1663,7 +1876,7 @@ public class BuildPhaseManager : MonoBehaviour
 
     Vector2 GetTrampolineWorldPosition(Vector2Int cell, Quaternion worldRotation)
     {
-        return CellToWorld(cell);
+        return CellToWorld(cell) + (Vector2)(worldRotation * new Vector2(0f, -0.12f));
     }
 
     GameObject PlaceBlockShape(string name, Vector2Int[] cells)
@@ -1874,6 +2087,11 @@ public class BuildPhaseManager : MonoBehaviour
         return targets.Count > 0;
     }
 
+    public bool IsRaceActive()
+    {
+        return phase == BuildPhase.Race;
+    }
+
     void RebuildOccupiedCells()
     {
         occupiedCells.Clear();
@@ -1944,6 +2162,15 @@ public class BuildPhaseManager : MonoBehaviour
     {
 #if UNITY_EDITOR
         return AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefab/Trampoline.prefab");
+#else
+        return null;
+#endif
+    }
+
+    GameObject TryLoadFireballLauncherPrefab()
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefab/FireballLauncher.prefab");
 #else
         return null;
 #endif
