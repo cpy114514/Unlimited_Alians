@@ -187,11 +187,8 @@ MonoBehaviour:
   glowTint: {r: 1, g: 1, b: 1, a: 0.9}
   doorScale: {x: 1, y: 1}
   glowScale: {x: 1, y: 1}
-  glowOffset: {x: 0, y: 0.08}
+  glowOffset: {x: 0, y: -0.08}
   glowAnimationSpeed: 8
-  glowSpinSpeed: 110
-  glowPulseSpeed: 3.6
-  glowPulseAmount: 0.1
 --- !u!1 &7182981932919834878
 GameObject:
   m_ObjectHideFlags: 0
@@ -217,9 +214,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7182981932919834878}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.92681414, w: -0.37552032}
-  m_LocalPosition: {x: 0, y: 0.08, z: 0}
-  m_LocalScale: {x: 1.0260764, y: 1.0260764, z: 1}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7351548759650454562}
@@ -266,7 +263,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 5
   m_Sprite: {fileID: -1739253891, guid: a6db55801746aa54796b275ebb2d8538, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.7827192}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.9}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0

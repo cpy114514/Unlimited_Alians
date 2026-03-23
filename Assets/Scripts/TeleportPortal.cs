@@ -156,18 +156,26 @@ public class TeleportPortal : MonoBehaviour
         LoadDefaultSpritesIfNeeded();
         CleanupLegacyVisuals();
 
-        doorTransform = EnsureChild("PortalDoor");
-        glowTransform = EnsureChild("PortalGlow");
+        bool createdDoor = false;
+        bool createdGlow = false;
+        doorTransform = EnsureChild("PortalDoor", ref createdDoor);
+        glowTransform = EnsureChild("PortalGlow", ref createdGlow);
         doorRenderer = EnsureSpriteRenderer(doorTransform, "PortalDoorRenderer", 6);
         glowRenderer = EnsureSpriteRenderer(glowTransform, "PortalGlowRenderer", 5);
 
-        doorTransform.localPosition = Vector3.zero;
-        doorTransform.localRotation = Quaternion.identity;
-        doorTransform.localScale = new Vector3(doorScale.x, doorScale.y, 1f);
+        if (createdDoor)
+        {
+            doorTransform.localPosition = Vector3.zero;
+            doorTransform.localRotation = Quaternion.identity;
+            doorTransform.localScale = new Vector3(doorScale.x, doorScale.y, 1f);
+        }
 
-        glowTransform.localPosition = new Vector3(glowOffset.x, glowOffset.y, 0f);
-        glowTransform.localRotation = Quaternion.identity;
-        glowTransform.localScale = new Vector3(glowScale.x, glowScale.y, 1f);
+        if (createdGlow)
+        {
+            glowTransform.localPosition = new Vector3(glowOffset.x, glowOffset.y, 0f);
+            glowTransform.localRotation = Quaternion.identity;
+            glowTransform.localScale = new Vector3(glowScale.x, glowScale.y, 1f);
+        }
 
         if (doorRenderer != null)
         {
@@ -188,11 +196,9 @@ public class TeleportPortal : MonoBehaviour
             return;
         }
 
-        glowTransform.localPosition = new Vector3(glowOffset.x, glowOffset.y, 0f);
-        glowTransform.localRotation = Quaternion.identity;
-        glowTransform.localScale = new Vector3(glowScale.x, glowScale.y, 1f);
         bool isCoolingDown = Application.isPlaying && Time.time < nextPortalReadyTime;
-        glowRenderer.enabled = !isCoolingDown;
+        bool hasLinkedPortal = !Application.isPlaying || GetCandidateTargets().Count > 0;
+        glowRenderer.enabled = hasLinkedPortal && !isCoolingDown;
 
         if (!glowRenderer.enabled)
         {
@@ -238,7 +244,7 @@ public class TeleportPortal : MonoBehaviour
         }
     }
 
-    Transform EnsureChild(string childName)
+    Transform EnsureChild(string childName, ref bool created)
     {
         Transform child = transform.Find(childName);
         if (child != null)
@@ -248,6 +254,7 @@ public class TeleportPortal : MonoBehaviour
 
         GameObject childObject = new GameObject(childName);
         childObject.transform.SetParent(transform, false);
+        created = true;
         return childObject.transform;
     }
 
