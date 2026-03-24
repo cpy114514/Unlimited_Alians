@@ -70,6 +70,10 @@ public class BuildPhaseManager : MonoBehaviour
     }
 
     public static BuildPhaseManager Instance;
+    public bool IsRaceActive
+    {
+        get { return phase == BuildPhase.Race; }
+    }
 
     public Vector2Int minPlacementCell = new Vector2Int(-4, -10);
     public Vector2Int maxPlacementCell = new Vector2Int(39, 8);
@@ -109,6 +113,8 @@ public class BuildPhaseManager : MonoBehaviour
 
     Sprite squareSprite;
     Sprite blockSprite;
+    TileBase blockTileAsset;
+    Tile runtimeBlockTile;
     Material spriteMaterial;
     CoinPickup coinTemplate;
     GameObject coinPrefabAsset;
@@ -354,6 +360,11 @@ public class BuildPhaseManager : MonoBehaviour
         if (spriteMaterial == null)
         {
             spriteMaterial = CreateSpriteMaterial();
+        }
+
+        if (blockTileAsset == null)
+        {
+            blockTileAsset = TryLoadBlockTile47();
         }
 
         if (blockSprite == null)
@@ -1857,6 +1868,8 @@ public class BuildPhaseManager : MonoBehaviour
         }
 
         placedObject.AddComponent<BuildPlacedMarker>();
+        BuildPlacedCells placedCells = placedObject.AddComponent<BuildPlacedCells>();
+        placedCells.cells = (Vector2Int[])cells.Clone();
         placedRoundObjects.Add(placedObject);
 
         foreach (Vector2Int cell in cells)
@@ -2013,20 +2026,31 @@ public class BuildPhaseManager : MonoBehaviour
     GameObject PlaceBlockShape(string name, Vector2Int[] cells)
     {
         GameObject root = new GameObject("Placed" + name.Replace(" ", string.Empty));
+        root.transform.position = Vector3.zero;
+        Grid grid = root.AddComponent<Grid>();
+        grid.cellSize = Vector3.one;
 
+        Rigidbody2D rigidbody = root.AddComponent<Rigidbody2D>();
+        rigidbody.bodyType = RigidbodyType2D.Static;
+        CompositeCollider2D composite = root.AddComponent<CompositeCollider2D>();
+        composite.geometryType = CompositeCollider2D.GeometryType.Polygons;
+        composite.generationType = CompositeCollider2D.GenerationType.Synchronous;
+        composite.vertexDistance = 0.01f;
+
+        GameObject tilemapObject = new GameObject("Tilemap");
+        tilemapObject.transform.SetParent(root.transform, false);
+        Tilemap tilemap = tilemapObject.AddComponent<Tilemap>();
+        TilemapRenderer tilemapRenderer = tilemapObject.AddComponent<TilemapRenderer>();
+        tilemapRenderer.sortingOrder = 2;
+        TilemapCollider2D tilemapCollider = tilemapObject.AddComponent<TilemapCollider2D>();
+        tilemapCollider.usedByComposite = true;
+        tilemapCollider.extrusionFactor = 0.02f;
+
+        TileBase tile = GetBlockTile();
         foreach (Vector2Int cell in cells)
         {
-            GameObject blockCell = new GameObject("Cell");
-            blockCell.transform.SetParent(root.transform, false);
-            blockCell.transform.position = CellToWorld(cell);
-
-            SpriteRenderer renderer = blockCell.AddComponent<SpriteRenderer>();
-            renderer.sprite = blockSprite != null ? blockSprite : squareSprite;
-            renderer.sharedMaterial = spriteMaterial;
-            renderer.color = new Color(0.72f, 0.66f, 0.58f, 1f);
-
-            BoxCollider2D collider = blockCell.AddComponent<BoxCollider2D>();
-            collider.size = Vector2.one * 0.96f;
+            tilemap.SetTile(new Vector3Int(cell.x, cell.y, 0), tile);
+            tilemap.SetColor(new Vector3Int(cell.x, cell.y, 0), new Color(0.72f, 0.66f, 0.58f, 1f));
         }
 
         ApplyBuildSurfaceLayer(root);
@@ -2218,11 +2242,6 @@ public class BuildPhaseManager : MonoBehaviour
         return targets.Count > 0;
     }
 
-    public bool IsRaceActive()
-    {
-        return phase == BuildPhase.Race;
-    }
-
     void RebuildOccupiedCells()
     {
         occupiedCells.Clear();
@@ -2231,6 +2250,17 @@ public class BuildPhaseManager : MonoBehaviour
         {
             if (placedObject == null)
             {
+                continue;
+            }
+
+            BuildPlacedCells placedCells = placedObject.GetComponent<BuildPlacedCells>();
+            if (placedCells != null && placedCells.cells != null && placedCells.cells.Length > 0)
+            {
+                foreach (Vector2Int cell in placedCells.cells)
+                {
+                    occupiedCells.Add(cell);
+                }
+
                 continue;
             }
 
@@ -2287,6 +2317,33 @@ public class BuildPhaseManager : MonoBehaviour
         }
 #endif
         return null;
+    }
+
+    TileBase TryLoadBlockTile47()
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<TileBase>("Assets/Picture/tilemap_47.asset");
+#else
+        return null;
+#endif
+    }
+
+    TileBase GetBlockTile()
+    {
+        if (blockTileAsset != null)
+        {
+            return blockTileAsset;
+        }
+
+        if (runtimeBlockTile == null)
+        {
+            runtimeBlockTile = ScriptableObject.CreateInstance<Tile>();
+            runtimeBlockTile.sprite = blockSprite != null ? blockSprite : squareSprite;
+            runtimeBlockTile.colliderType = Tile.ColliderType.Grid;
+            runtimeBlockTile.name = "RuntimePlacedBlockTile";
+        }
+
+        return runtimeBlockTile;
     }
 
     Material CreateSpriteMaterial()
@@ -2405,4 +2462,9 @@ public class BuildPhaseManager : MonoBehaviour
 
 public class BuildPlacedMarker : MonoBehaviour
 {
+}
+
+public class BuildPlacedCells : MonoBehaviour
+{
+    public Vector2Int[] cells;
 }

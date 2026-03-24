@@ -8,13 +8,13 @@ using UnityEditor;
 public class TeleportPortal : MonoBehaviour
 {
     static readonly List<TeleportPortal> activePortals = new List<TeleportPortal>();
-    static readonly Dictionary<int, float> playerCooldownUntil =
+    static readonly Dictionary<int, float> entityCooldownUntil =
         new Dictionary<int, float>();
 
     public string portalGroup = "Default";
-    public Vector2 colliderSize = new Vector2(0.9f, 1.45f);
-    public Vector2 colliderOffset = new Vector2(0f, 0.05f);
-    public Vector2 exitOffset = new Vector2(0f, 0.08f);
+    public Vector2 colliderSize = new Vector2(0.58f, 0.82f);
+    public Vector2 colliderOffset = new Vector2(0f, -0.04f);
+    public Vector2 exitOffset = new Vector2(0f, 0.02f);
     public float teleportCooldown = 1f;
 
     [Header("Visuals")]
@@ -22,9 +22,9 @@ public class TeleportPortal : MonoBehaviour
     public Sprite glowSprite;
     public Color doorTint = Color.white;
     public Color glowTint = new Color(1f, 1f, 1f, 0.9f);
-    public Vector2 doorScale = Vector2.one;
-    public Vector2 glowScale = Vector2.one;
-    public Vector2 glowOffset = new Vector2(0f, -0.04f);
+    public Vector2 doorScale = new Vector2(0.34f, 0.34f);
+    public Vector2 glowScale = new Vector2(0.3f, 0.3f);
+    public Vector2 glowOffset = new Vector2(0f, -0.12f);
     public float glowAnimationSpeed = 8f;
 
     BoxCollider2D triggerCollider;
@@ -80,23 +80,35 @@ public class TeleportPortal : MonoBehaviour
         }
 
         PlayerController player = other.GetComponentInParent<PlayerController>();
-        if (player == null)
+        if (player != null)
         {
+            TryTeleportEntity(player, destination => player.TeleportTo(destination));
             return;
         }
 
-        TryTeleport(player);
+        BlueBeetleEnemy beetle = other.GetComponentInParent<BlueBeetleEnemy>();
+        if (beetle != null)
+        {
+            TryTeleportEntity(beetle, destination => beetle.TeleportTo(destination));
+            return;
+        }
+
+        FireballProjectile projectile = other.GetComponentInParent<FireballProjectile>();
+        if (projectile != null)
+        {
+            TryTeleportEntity(projectile, destination => projectile.TeleportTo(destination));
+        }
     }
 
-    void TryTeleport(PlayerController player)
+    void TryTeleportEntity(Component entity, System.Action<Vector3> teleportAction)
     {
-        if (player == null || Time.time < nextPortalReadyTime)
+        if (entity == null || teleportAction == null || Time.time < nextPortalReadyTime)
         {
             return;
         }
 
-        int playerId = player.GetInstanceID();
-        if (playerCooldownUntil.TryGetValue(playerId, out float cooldownUntil) &&
+        int entityId = entity.GetInstanceID();
+        if (entityCooldownUntil.TryGetValue(entityId, out float cooldownUntil) &&
             Time.time < cooldownUntil)
         {
             return;
@@ -109,11 +121,11 @@ public class TeleportPortal : MonoBehaviour
         }
 
         TeleportPortal target = targets[Random.Range(0, targets.Count)];
-        playerCooldownUntil[playerId] = Time.time + teleportCooldown;
+        entityCooldownUntil[entityId] = Time.time + teleportCooldown;
         nextPortalReadyTime = Time.time + teleportCooldown;
         target.nextPortalReadyTime = Time.time + teleportCooldown;
 
-        player.TeleportTo(target.transform.position + (Vector3)target.exitOffset);
+        teleportAction(target.transform.position + (Vector3)target.exitOffset);
     }
 
     List<TeleportPortal> GetCandidateTargets()

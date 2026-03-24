@@ -73,7 +73,7 @@ public class FireballLauncher : MonoBehaviour
             return false;
         }
 
-        if (BuildPhaseManager.Instance != null && !BuildPhaseManager.Instance.IsRaceActive())
+        if (BuildPhaseManager.Instance != null && !BuildPhaseManager.Instance.IsRaceActive)
         {
             return false;
         }

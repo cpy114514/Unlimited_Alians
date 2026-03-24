@@ -37,6 +37,11 @@ public class PlayerController : MonoBehaviour
     [Header("Wall Slide")]
     public float wallSlideSpeed = 2f;
 
+    [Header("Step Climb")]
+    public float stepUpHeight = 0.52f;
+    public float stepCheckDistance = 0.12f;
+    public float stepForwardNudge = 0.08f;
+
     [Header("Coyote Time")]
     public float coyoteTime = 0.1f;
 
@@ -59,6 +64,7 @@ public class PlayerController : MonoBehaviour
 
     Rigidbody2D rb;
     SpriteRenderer sr;
+    BoxCollider2D bodyCollider;
 
     float horizontal;
     bool jumpHeld;
@@ -80,6 +86,7 @@ public class PlayerController : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         sr = GetComponent<SpriteRenderer>();
+        bodyCollider = GetComponent<BoxCollider2D>();
 
         if (idleSprite == null && sr != null)
         {
@@ -129,6 +136,7 @@ public class PlayerController : MonoBehaviour
         }
 
         HandleMovement();
+        TryStepUp();
         HandleWallSlide();
         BetterJump();
     }
@@ -465,6 +473,88 @@ public class PlayerController : MonoBehaviour
         );
 
         rb.velocity = new Vector2(newX, rb.velocity.y);
+    }
+
+    void TryStepUp()
+    {
+        if (rb == null || bodyCollider == null || !isGrounded)
+        {
+            return;
+        }
+
+        if (Mathf.Abs(horizontal) < 0.01f || Mathf.Abs(rb.velocity.x) < 0.05f || rb.velocity.y > 0.2f)
+        {
+            return;
+        }
+
+        float direction = Mathf.Sign(horizontal);
+        Bounds bounds = bodyCollider.bounds;
+        Vector2 lowerOrigin = new Vector2(
+            direction > 0f ? bounds.max.x : bounds.min.x,
+            bounds.min.y + 0.06f
+        );
+        Vector2 upperOrigin = lowerOrigin + Vector2.up * stepUpHeight;
+
+        RaycastHit2D lowerHit = Physics2D.Raycast(
+            lowerOrigin,
+            Vector2.right * direction,
+            stepCheckDistance,
+            groundLayer
+        );
+        if (lowerHit.collider == null)
+        {
+            return;
+        }
+
+        RaycastHit2D upperHit = Physics2D.Raycast(
+            upperOrigin,
+            Vector2.right * direction,
+            stepCheckDistance,
+            groundLayer
+        );
+        if (upperHit.collider != null)
+        {
+            return;
+        }
+
+        Vector2 landingProbe = upperOrigin + Vector2.right * direction * (stepCheckDistance + 0.02f);
+        RaycastHit2D landingHit = Physics2D.Raycast(
+            landingProbe,
+            Vector2.down,
+            stepUpHeight + 0.2f,
+            groundLayer
+        );
+        if (landingHit.collider == null)
+        {
+            return;
+        }
+
+        float targetBottom = landingHit.point.y + 0.02f;
+        float verticalLift = targetBottom - bounds.min.y;
+        if (verticalLift <= 0.02f || verticalLift > stepUpHeight + 0.05f)
+        {
+            return;
+        }
+
+        Vector2 stepOffset = new Vector2(direction * stepForwardNudge, verticalLift);
+        Vector2 overlapCenter = (Vector2)bounds.center + stepOffset;
+        Vector2 overlapSize = bounds.size - new Vector3(0.06f, 0.04f, 0f);
+        Collider2D blockingCollider = Physics2D.OverlapBox(
+            overlapCenter,
+            overlapSize,
+            0f,
+            groundLayer
+        );
+
+        if (blockingCollider != null && blockingCollider.transform.root != transform)
+        {
+            return;
+        }
+
+        rb.position += stepOffset;
+        rb.velocity = new Vector2(rb.velocity.x, Mathf.Max(0f, rb.velocity.y));
+        DetectGround();
+        DetectWalls();
     }
 
     void HandleWallSlide()

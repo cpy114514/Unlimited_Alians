@@ -276,6 +276,15 @@ public class RoundManager : MonoBehaviour
 
     void ResetScenePickups(bool forceFullReset)
     {
+        BlueBeetleEnemy[] beetles = FindObjectsOfType<BlueBeetleEnemy>(true);
+        foreach (BlueBeetleEnemy beetle in beetles)
+        {
+            if (beetle != null)
+            {
+                beetle.ResetEnemy(forceFullReset);
+            }
+        }
+
         LockedChest[] chests = FindObjectsOfType<LockedChest>(true);
         foreach (LockedChest chest in chests)
         {

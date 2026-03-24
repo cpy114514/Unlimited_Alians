@@ -111,8 +111,8 @@ Transform:
   m_GameObject: {fileID: 3300180022901347471}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalPosition: {x: 0, y: -0.12, z: 0}
+  m_LocalScale: {x: 0.9, y: 0.9, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6372221883691105122}
@@ -151,7 +151,7 @@ BoxCollider2D:
   m_IsTrigger: 1
   m_UsedByEffector: 0
   m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0.05}
+  m_Offset: {x: 0, y: -0.04}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
@@ -162,7 +162,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 0.9, y: 1.45}
+  m_Size: {x: 0.58, y: 0.82}
   m_EdgeRadius: 0
 --- !u!114 &6788219131518774382
 MonoBehaviour:
@@ -177,17 +177,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   portalGroup: Default
-  colliderSize: {x: 0.9, y: 1.45}
-  colliderOffset: {x: 0, y: 0.05}
-  exitOffset: {x: 0, y: 0.08}
+  colliderSize: {x: 0.58, y: 0.82}
+  colliderOffset: {x: 0, y: -0.04}
+  exitOffset: {x: 0, y: 0.02}
   teleportCooldown: 1
   doorSprite: {fileID: 21300000, guid: 91f54426ece08634289d5d52638ad2b5, type: 3}
   glowSprite: {fileID: -1739253891, guid: a6db55801746aa54796b275ebb2d8538, type: 3}
   doorTint: {r: 1, g: 1, b: 1, a: 1}
   glowTint: {r: 1, g: 1, b: 1, a: 0.9}
-  doorScale: {x: 1, y: 1}
-  glowScale: {x: 1, y: 1}
-  glowOffset: {x: 0, y: -0.08}
+  doorScale: {x: 0.34, y: 0.34}
+  glowScale: {x: 0.3, y: 0.3}
+  glowOffset: {x: 0, y: -0.12}
   glowAnimationSpeed: 8
 --- !u!1 &7182981932919834878
 GameObject:

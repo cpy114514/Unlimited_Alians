@@ -66,6 +66,21 @@ public class FireballProjectile : MonoBehaviour
         Destroy(gameObject, lifetime);
     }
 
+    public void TeleportTo(Vector3 position)
+    {
+        transform.position = position;
+
+        if (rb == null)
+        {
+            rb = GetComponent<Rigidbody2D>();
+        }
+
+        if (rb != null)
+        {
+            rb.position = position;
+        }
+    }
+
     void EnsureTrailParticles()
     {
         if (trailParticles != null)
@@ -159,6 +174,14 @@ public class FireballProjectile : MonoBehaviour
 
             RoundManager.Instance?.PlayerDied(player.controlType);
             Destroy(player.gameObject);
+            Destroy(gameObject);
+            return;
+        }
+
+        BlueBeetleEnemy beetle = other.GetComponentInParent<BlueBeetleEnemy>();
+        if (beetle != null)
+        {
+            beetle.HitByHazard();
             Destroy(gameObject);
             return;
         }

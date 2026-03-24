@@ -5,6 +5,7 @@ public class KillBlock : MonoBehaviour
     void OnTriggerEnter2D(Collider2D other)
     {
         PlayerController player = other.GetComponentInParent<PlayerController>();
+        BlueBeetleEnemy beetle = other.GetComponentInParent<BlueBeetleEnemy>();
 
         if (player != null)
         {
@@ -20,6 +21,11 @@ public class KillBlock : MonoBehaviour
             }
 
             Destroy(player.gameObject);
+        }
+
+        if (beetle != null)
+        {
+            beetle.HitByHazard();
         }
     }
 }
