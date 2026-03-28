@@ -7,8 +7,19 @@ using UnityEditor;
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(BoxCollider2D))]
 [RequireComponent(typeof(SpriteRenderer))]
-public class BlueBeetleEnemy : MonoBehaviour
+public partial class BlueBeetleEnemy : MonoBehaviour
 {
+    struct LandingOption
+    {
+        public bool valid;
+        public float direction;
+        public bool requiresJump;
+        public float jumpHeight;
+        public float distance;
+        public float landingWidth;
+        public float score;
+    }
+
     enum BeetleState
     {
         Walking,
@@ -37,6 +48,11 @@ public class BlueBeetleEnemy : MonoBehaviour
     public float stepForwardNudge = 0.08f;
     public float maxStepDownHeight = 1.05f;
     public float maxJumpableHeight = 2.8f;
+    public float smallPlatformWidthThreshold = 2.35f;
+    public float smallPlatformMaxDropHeight = 3.5f;
+    public float smallPlatformSearchDistance = 3.2f;
+    public float smallPlatformProbeStep = 0.35f;
+    public float platformHeightTolerance = 0.35f;
     public float trampolineJumpBonusScale = 0.25f;
     public float trampolineJumpHeightBonusScale = 0.05f;
     public float trampolineAvoidNearDistance = 0.9f;
@@ -246,75 +262,41 @@ public class BlueBeetleEnemy : MonoBehaviour
             child.localPosition = localPosition;
         }
 
+        RemoveDuplicateChildren(childName, child);
         return child;
     }
 
-    void EnsureHitboxes()
+    void RemoveDuplicateChildren(string childName, Transform keepTransform)
     {
-        backHitbox = EnsureHitbox("BackHitbox", backHitbox);
-        hurtHitbox = EnsureHitbox("BodyHitbox", hurtHitbox);
-        shellKickLeftHitbox = EnsureHitbox("ShellKickLeftHitbox", shellKickLeftHitbox);
-        shellKickRightHitbox = EnsureHitbox("ShellKickRightHitbox", shellKickRightHitbox);
-        shellTopKickHitbox = EnsureHitbox("ShellTopKickHitbox", shellTopKickHitbox);
-    }
+        List<GameObject> duplicates = null;
 
-    BoxCollider2D EnsureHitbox(string childName, BoxCollider2D existingCollider)
-    {
-        if (existingCollider != null)
+        for (int i = 0; i < transform.childCount; i++)
         {
-            existingCollider.isTrigger = true;
-            return existingCollider;
+            Transform child = transform.GetChild(i);
+            if (child == keepTransform || child.name != childName)
+            {
+                continue;
+            }
+
+            duplicates ??= new List<GameObject>();
+            duplicates.Add(child.gameObject);
         }
 
-        Transform child = transform.Find(childName);
-        if (child == null)
+        if (duplicates == null)
         {
-            GameObject childObject = new GameObject(childName);
-            childObject.transform.SetParent(transform, false);
-            child = childObject.transform;
+            return;
         }
 
-        BoxCollider2D collider = child.GetComponent<BoxCollider2D>();
-        if (collider == null)
+        foreach (GameObject duplicate in duplicates)
         {
-            collider = child.gameObject.AddComponent<BoxCollider2D>();
-        }
-
-        collider.isTrigger = true;
-        child.gameObject.layer = gameObject.layer;
-        return collider;
-    }
-
-    void UpdateHitboxes()
-    {
-        if (backHitbox != null)
-        {
-            backHitbox.offset = backHitboxOffset;
-            backHitbox.size = backHitboxSize;
-        }
-
-        if (hurtHitbox != null)
-        {
-            hurtHitbox.offset = bodyHitboxOffset;
-            hurtHitbox.size = bodyHitboxSize;
-        }
-
-        if (shellKickLeftHitbox != null)
-        {
-            shellKickLeftHitbox.offset = shellKickLeftOffset;
-            shellKickLeftHitbox.size = shellKickHitboxSize;
-        }
-
-        if (shellKickRightHitbox != null)
-        {
-            shellKickRightHitbox.offset = shellKickRightOffset;
-            shellKickRightHitbox.size = shellKickHitboxSize;
-        }
-
-        if (shellTopKickHitbox != null)
-        {
-            shellTopKickHitbox.offset = shellTopKickOffset;
-            shellTopKickHitbox.size = shellTopKickHitboxSize;
+            if (Application.isPlaying)
+            {
+                Destroy(duplicate);
+            }
+            else
+            {
+                DestroyImmediate(duplicate);
+            }
         }
     }
 
@@ -323,893 +305,6 @@ public class BlueBeetleEnemy : MonoBehaviour
         spawnPosition = transform.position;
         spawnRotation = transform.rotation;
         spawnScale = transform.localScale;
-    }
-
-    void Patrol()
-    {
-        float direction = movingRight ? 1f : -1f;
-        bool grounded = IsGrounded();
-
-        if (!grounded)
-        {
-            rb.velocity = new Vector2(direction * moveSpeed, rb.velocity.y);
-            spriteRenderer.flipX = movingRight;
-            return;
-        }
-
-        if (HasTrampolineAhead(direction))
-        {
-            movingRight = !movingRight;
-            direction = movingRight ? 1f : -1f;
-            rb.velocity = new Vector2(direction * moveSpeed, rb.velocity.y);
-            spriteRenderer.flipX = movingRight;
-            return;
-        }
-
-        bool steppedUp = TryStepUp(direction);
-        bool blockedAhead = !steppedUp && IsFrontBlocked(direction);
-
-        if (blockedAhead && TryJumpUpTile(direction))
-        {
-            blockedAhead = false;
-        }
-
-        if (blockedAhead || !HasTraversableGroundAhead(direction))
-        {
-            movingRight = !movingRight;
-            direction = movingRight ? 1f : -1f;
-        }
-
-        rb.velocity = new Vector2(direction * moveSpeed, rb.velocity.y);
-        spriteRenderer.flipX = movingRight;
-    }
-
-    bool TryStepUp(float direction)
-    {
-        if (rb == null || bodyCollider == null || !IsGrounded())
-        {
-            return false;
-        }
-
-        if (Mathf.Abs(rb.velocity.y) > 0.2f)
-        {
-            return false;
-        }
-
-        Bounds bounds = bodyCollider.bounds;
-        Vector2 lowerOrigin = new Vector2(
-            direction > 0f ? bounds.max.x : bounds.min.x,
-            bounds.min.y + 0.06f
-        );
-        LayerMask mask = ResolveGroundMask();
-
-        RaycastHit2D lowerHit = Physics2D.Raycast(
-            lowerOrigin,
-            Vector2.right * direction,
-            stepCheckDistance,
-            mask
-        );
-        if (lowerHit.collider == null || lowerHit.collider.transform.root == transform)
-        {
-            return false;
-        }
-
-        Vector2 upperOrigin = lowerOrigin + Vector2.up * stepUpHeight;
-        RaycastHit2D upperHit = Physics2D.Raycast(
-            upperOrigin,
-            Vector2.right * direction,
-            stepCheckDistance,
-            mask
-        );
-        if (upperHit.collider != null && upperHit.collider.transform.root != transform)
-        {
-            return false;
-        }
-
-        Vector2 landingProbeOrigin = upperOrigin + Vector2.right * direction * (stepCheckDistance + 0.04f);
-        RaycastHit2D landingHit = Physics2D.Raycast(
-            landingProbeOrigin,
-            Vector2.down,
-            stepUpHeight + 0.2f,
-            mask
-        );
-        if (landingHit.collider == null || landingHit.collider.transform.root == transform)
-        {
-            return false;
-        }
-
-        float targetBottom = landingHit.point.y + 0.02f;
-        float verticalLift = targetBottom - bounds.min.y;
-        if (verticalLift <= 0.02f || verticalLift > stepUpHeight + 0.05f)
-        {
-            return false;
-        }
-
-        Vector2 stepOffset = new Vector2(direction * stepForwardNudge, verticalLift);
-        Vector2 overlapCenter = (Vector2)bounds.center + stepOffset;
-        Vector2 overlapSize = bounds.size - new Vector3(0.06f, 0.04f, 0f);
-        Collider2D blockingCollider = Physics2D.OverlapBox(
-            overlapCenter,
-            overlapSize,
-            0f,
-            mask
-        );
-
-        if (blockingCollider != null && blockingCollider.transform.root != transform)
-        {
-            return false;
-        }
-
-        rb.position += stepOffset;
-        rb.velocity = new Vector2(direction * moveSpeed, Mathf.Max(0f, rb.velocity.y));
-        spriteRenderer.flipX = movingRight;
-        return true;
-    }
-
-    void MoveShell()
-    {
-        float direction = movingRight ? 1f : -1f;
-
-        if (!IsGrounded())
-        {
-            rb.velocity = new Vector2(direction * shellMoveSpeed, rb.velocity.y);
-            spriteRenderer.flipX = movingRight;
-            return;
-        }
-
-        if (CastForGround(
-                new Vector2(
-                    direction > 0f ? bodyCollider.bounds.max.x + 0.02f : bodyCollider.bounds.min.x - 0.02f,
-                    bodyCollider.bounds.center.y),
-                Vector2.right * direction,
-                wallCheckDistance))
-        {
-            movingRight = !movingRight;
-            direction = movingRight ? 1f : -1f;
-        }
-
-        rb.velocity = new Vector2(direction * shellMoveSpeed, rb.velocity.y);
-        spriteRenderer.flipX = movingRight;
-    }
-
-    bool IsFrontBlocked(float direction)
-    {
-        Vector2 wallProbe = GetProbeWorldPosition(frontWallProbe, direction, new Vector2(0.4f, -0.02f));
-        if (!TryRaycastTraversal(wallProbe, Vector2.right * direction, wallCheckDistance, out RaycastHit2D hit))
-        {
-            return false;
-        }
-
-        if (bodyCollider != null && hit.point.y <= bodyCollider.bounds.min.y + 0.08f)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    bool HasTraversableGroundAhead(float direction)
-    {
-        Bounds bounds = bodyCollider.bounds;
-        float rayDistance = maxStepDownHeight + edgeCheckDistance + 0.18f;
-        Vector2[] probeOrigins =
-        {
-            GetProbeWorldPosition(dropProbeNear, direction, new Vector2(0.34f, 1.05f)),
-            GetProbeWorldPosition(dropProbeFar, direction, new Vector2(0.72f, 1.05f))
-        };
-
-        for (int i = 0; i < probeOrigins.Length; i++)
-        {
-            if (!TryRaycastTraversal(probeOrigins[i], Vector2.down, rayDistance, out RaycastHit2D hit))
-            {
-                continue;
-            }
-
-            float dropHeight = bounds.min.y - hit.point.y;
-            if (dropHeight <= maxStepDownHeight + 0.05f)
-            {
-                return true;
-            }
-        }
-
-        float[] fallbackForwardOffsets =
-        {
-            bounds.extents.x + 0.12f,
-            bounds.extents.x + 0.45f,
-            bounds.extents.x + 0.82f
-        };
-
-        for (int i = 0; i < fallbackForwardOffsets.Length; i++)
-        {
-            Vector2 origin = new Vector2(
-                direction > 0f ? bounds.max.x + fallbackForwardOffsets[i] : bounds.min.x - fallbackForwardOffsets[i],
-                bounds.min.y + 0.08f
-            );
-
-            if (!TryRaycastTraversal(
-                origin,
-                Vector2.down,
-                maxStepDownHeight + 1.1f,
-                out RaycastHit2D hit))
-            {
-                continue;
-            }
-
-            float dropHeight = bounds.min.y - hit.point.y;
-            if (dropHeight <= maxStepDownHeight + 0.05f)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool CastForGround(Vector2 origin, Vector2 direction, float distance)
-    {
-        return TryRaycastTraversal(origin, direction, distance, out _);
-    }
-
-    LayerMask ResolveGroundMask()
-    {
-        if (groundMask.value != 0)
-        {
-            return groundMask;
-        }
-
-        PlayerController player = FindObjectOfType<PlayerController>();
-        if (player != null)
-        {
-            groundMask = player.groundLayer;
-            return groundMask;
-        }
-
-        groundMask = Physics2D.AllLayers;
-        return groundMask;
-    }
-
-    LayerMask ResolveTraversalMask()
-    {
-        if (traversalMask.value != 0)
-        {
-            return traversalMask;
-        }
-
-        int groundLayer = LayerMask.NameToLayer("Ground");
-        if (groundLayer >= 0)
-        {
-            traversalMask = 1 << groundLayer;
-            return traversalMask;
-        }
-
-        traversalMask = ResolveGroundMask();
-        return traversalMask;
-    }
-
-    bool TryRaycastTraversal(Vector2 origin, Vector2 direction, float distance, out RaycastHit2D validHit)
-    {
-        LayerMask mask = ResolveTraversalMask();
-        RaycastHit2D[] hits = Physics2D.RaycastAll(origin, direction.normalized, distance, mask);
-
-        for (int i = 0; i < hits.Length; i++)
-        {
-            RaycastHit2D hit = hits[i];
-            if (IsTraversalCollider(hit.collider))
-            {
-                validHit = hit;
-                return true;
-            }
-        }
-
-        validHit = default;
-        return false;
-    }
-
-    bool HasTrampolineAhead(float direction)
-    {
-        if (bodyCollider == null)
-        {
-            return false;
-        }
-
-        Bounds bounds = bodyCollider.bounds;
-        float[] forwardOffsets =
-        {
-            bounds.extents.x + trampolineAvoidNearDistance,
-            bounds.extents.x + trampolineAvoidFarDistance
-        };
-
-        LayerMask mask = ResolveGroundMask();
-        float rayDistance = trampolineAvoidProbeHeight + maxStepDownHeight + 0.8f;
-
-        for (int i = 0; i < forwardOffsets.Length; i++)
-        {
-            Vector2 origin = new Vector2(
-                direction > 0f ? bounds.center.x + forwardOffsets[i] : bounds.center.x - forwardOffsets[i],
-                bounds.min.y + trampolineAvoidProbeHeight
-            );
-
-            RaycastHit2D[] hits = Physics2D.RaycastAll(origin, Vector2.down, rayDistance, mask);
-            for (int j = 0; j < hits.Length; j++)
-            {
-                Collider2D hitCollider = hits[j].collider;
-                if (hitCollider == null || hitCollider.transform.root == transform || hitCollider.isTrigger)
-                {
-                    continue;
-                }
-
-                if (hitCollider.GetComponentInParent<Trampoline>() != null)
-                {
-                    return true;
-                }
-
-                if (IsTraversalCollider(hitCollider))
-                {
-                    break;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    bool IsTraversalCollider(Collider2D collider)
-    {
-        if (collider == null || collider.transform.root == transform || collider.isTrigger)
-        {
-            return false;
-        }
-
-        if (collider.GetComponentInParent<PlayerController>() != null)
-        {
-            return false;
-        }
-
-        if (collider.GetComponentInParent<BlueBeetleEnemy>() != null)
-        {
-            return false;
-        }
-
-        if (collider.GetComponentInParent<Trampoline>() != null)
-        {
-            return false;
-        }
-
-        int groundLayer = LayerMask.NameToLayer("Ground");
-        if (groundLayer >= 0 && collider.gameObject.layer == groundLayer)
-        {
-            return true;
-        }
-        return false;
-    }
-
-    bool TryJumpUpTile(float direction)
-    {
-        if (rb == null || bodyCollider == null || Time.time - lastJumpTime < jumpCooldown)
-        {
-            return false;
-        }
-
-        if (!IsGrounded())
-        {
-            return false;
-        }
-
-        float launchForce = jumpForce;
-        int maxJumpCells = 1;
-
-        Vector2 baseProbe = GetProbeWorldPosition(jumpBlockProbeLow, direction, new Vector2(0.36f, -0.12f));
-        int targetCellHeight = -1;
-
-        for (int cellHeight = 1; cellHeight <= maxJumpCells; cellHeight++)
-        {
-            Vector2 clearanceProbe = baseProbe + Vector2.up * cellHeight;
-            if (IsSpaceClear(clearanceProbe))
-            {
-                targetCellHeight = cellHeight;
-                break;
-            }
-        }
-
-        if (targetCellHeight < 0)
-        {
-            return false;
-        }
-
-        float targetRise = targetCellHeight;
-        launchForce = Mathf.Max(launchForce, CalculateJumpForce(targetRise));
-        rb.velocity = new Vector2(direction * moveSpeed, launchForce);
-        spriteRenderer.flipX = movingRight;
-        lastJumpTime = Time.time;
-        return true;
-    }
-
-    bool IsSpaceClear(Vector2 position)
-    {
-        LayerMask mask = ResolveTraversalMask();
-        Collider2D[] hits = Physics2D.OverlapBoxAll(position, new Vector2(0.18f, 0.18f), 0f, mask);
-        for (int i = 0; i < hits.Length; i++)
-        {
-            Collider2D hit = hits[i];
-            if (IsTraversalCollider(hit))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    float CalculateJumpForce(float targetRise)
-    {
-        if (rb == null)
-        {
-            return jumpForce;
-        }
-
-        float gravityMagnitude = Mathf.Abs(Physics2D.gravity.y * rb.gravityScale);
-        if (gravityMagnitude <= 0.001f)
-        {
-            return jumpForce;
-        }
-
-        float requiredForce = Mathf.Sqrt(2f * gravityMagnitude * Mathf.Max(0.1f, targetRise + 0.08f));
-        return Mathf.Max(jumpForce, requiredForce);
-    }
-
-    bool IsGrounded()
-    {
-        if (bodyCollider == null)
-        {
-            return false;
-        }
-
-        Bounds bounds = bodyCollider.bounds;
-        Vector2 origin = GetProbeWorldPosition(groundProbe, 1f, new Vector2(0f, -0.34f));
-        return CastForGround(origin, Vector2.down, groundCheckDistance);
-    }
-
-    bool TryGetGroundedTrampoline(out Trampoline trampoline)
-    {
-        trampoline = null;
-        if (bodyCollider == null)
-        {
-            return false;
-        }
-
-        RaycastHit2D hit = Physics2D.Raycast(
-            GetProbeWorldPosition(groundProbe, 1f, new Vector2(0f, -0.34f)),
-            Vector2.down,
-            groundCheckDistance,
-            ResolveGroundMask()
-        );
-
-        if (hit.collider == null)
-        {
-            return false;
-        }
-
-        trampoline = hit.collider.GetComponentInParent<Trampoline>();
-        return trampoline != null;
-    }
-
-    Vector2 GetProbeWorldPosition(Transform probe, float direction, Vector2 fallbackLocalPosition)
-    {
-        Vector3 localPosition = probe != null ? probe.localPosition : (Vector3)fallbackLocalPosition;
-        if (direction < 0f)
-        {
-            localPosition.x = -localPosition.x;
-        }
-
-        return transform.TransformPoint(localPosition);
-    }
-
-    void ProcessPlayerInteractions()
-    {
-        if (state == BeetleState.Walking)
-        {
-            if (TryHandleWalkingStomp())
-            {
-                return;
-            }
-
-            TryHandleWalkingDamage();
-            return;
-        }
-
-        if (TryGetShellTopKick(out PlayerController topPlayer, out Collider2D topCollider, out bool topKickToRight))
-        {
-            if (!CanProcessPlayer(topPlayer))
-            {
-                return;
-            }
-
-            MarkPlayerProcessed(topPlayer);
-            topPlayer.Bounce(stompBounceForce);
-
-            if (state == BeetleState.ShellIdle)
-            {
-                KickShell(topKickToRight, topCollider);
-                return;
-            }
-
-            StopShell();
-            return;
-        }
-
-        if (TryGetShellPlayerOverlap(
-                out PlayerController player,
-                out Collider2D collider,
-                out bool kickToRight))
-        {
-            if (!CanProcessPlayer(player))
-            {
-                return;
-            }
-
-            MarkPlayerProcessed(player);
-
-            if (state == BeetleState.ShellIdle)
-            {
-                KickShell(kickToRight, collider);
-                return;
-            }
-
-            StopShell();
-        }
-    }
-
-    bool TryHandleWalkingStomp()
-    {
-        int count = OverlapPlayers(backHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            Collider2D collider = overlapBuffer[i];
-            PlayerController player = collider != null ? collider.GetComponentInParent<PlayerController>() : null;
-            if (player == null || !CanProcessPlayer(player))
-            {
-                continue;
-            }
-
-            if (!CanStompPlayer(player, collider))
-            {
-                continue;
-            }
-
-            MarkPlayerProcessed(player);
-            EnterShell();
-            player.Bounce(stompBounceForce);
-            return true;
-        }
-
-        return false;
-    }
-
-    bool TryGetShellTopKick(out PlayerController player, out Collider2D collider, out bool kickToRight)
-    {
-        player = null;
-        collider = null;
-        kickToRight = false;
-
-        int count = OverlapPlayers(shellTopKickHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            Collider2D candidate = overlapBuffer[i];
-            PlayerController foundPlayer = candidate != null
-                ? candidate.GetComponentInParent<PlayerController>()
-                : null;
-            if (foundPlayer == null || !CanKickShellFromTop(foundPlayer, candidate))
-            {
-                continue;
-            }
-
-            player = foundPlayer;
-            collider = candidate;
-            kickToRight = foundPlayer.transform.position.x < transform.position.x;
-            return true;
-        }
-
-        return false;
-    }
-
-    bool TryGetShellPlayerOverlap(out PlayerController player, out Collider2D collider, out bool kickToRight)
-    {
-        player = null;
-        collider = null;
-        kickToRight = false;
-
-        int count = OverlapPlayers(shellKickLeftHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            PlayerController foundPlayer = overlapBuffer[i] != null
-                ? overlapBuffer[i].GetComponentInParent<PlayerController>()
-                : null;
-            if (foundPlayer == null)
-            {
-                continue;
-            }
-
-            player = foundPlayer;
-            collider = overlapBuffer[i];
-            kickToRight = true;
-            return true;
-        }
-
-        count = OverlapPlayers(shellKickRightHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            PlayerController foundPlayer = overlapBuffer[i] != null
-                ? overlapBuffer[i].GetComponentInParent<PlayerController>()
-                : null;
-            if (foundPlayer == null)
-            {
-                continue;
-            }
-
-            player = foundPlayer;
-            collider = overlapBuffer[i];
-            kickToRight = false;
-            return true;
-        }
-
-        return false;
-    }
-
-    void TryHandleWalkingDamage()
-    {
-        int count = OverlapPlayers(hurtHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            Collider2D collider = overlapBuffer[i];
-            PlayerController player = collider != null ? collider.GetComponentInParent<PlayerController>() : null;
-            if (player == null || !CanProcessPlayer(player))
-            {
-                continue;
-            }
-
-            if (RoundManager.Instance != null &&
-                RoundManager.Instance.IsPlayerResolved(player.controlType))
-            {
-                continue;
-            }
-
-            MarkPlayerProcessed(player);
-            RoundManager.Instance?.PlayerDied(player.controlType);
-            Destroy(player.gameObject);
-            return;
-        }
-    }
-
-    bool TryGetAnyPlayerOverlap(out PlayerController player, out Collider2D collider)
-    {
-        player = null;
-        collider = null;
-
-        int count = OverlapPlayers(backHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            PlayerController foundPlayer = overlapBuffer[i] != null
-                ? overlapBuffer[i].GetComponentInParent<PlayerController>()
-                : null;
-            if (foundPlayer == null)
-            {
-                continue;
-            }
-
-            player = foundPlayer;
-            collider = overlapBuffer[i];
-            return true;
-        }
-
-        count = OverlapPlayers(hurtHitbox, overlapBuffer);
-        for (int i = 0; i < count; i++)
-        {
-            PlayerController foundPlayer = overlapBuffer[i] != null
-                ? overlapBuffer[i].GetComponentInParent<PlayerController>()
-                : null;
-            if (foundPlayer == null)
-            {
-                continue;
-            }
-
-            player = foundPlayer;
-            collider = overlapBuffer[i];
-            return true;
-        }
-
-        return false;
-    }
-
-    int OverlapPlayers(BoxCollider2D sourceCollider, Collider2D[] results)
-    {
-        if (sourceCollider == null || results == null)
-        {
-            return 0;
-        }
-
-        Bounds bounds = sourceCollider.bounds;
-        Collider2D[] hits = Physics2D.OverlapBoxAll(bounds.center, bounds.size, 0f);
-        int count = 0;
-
-        for (int i = 0; i < hits.Length && count < results.Length; i++)
-        {
-            Collider2D hit = hits[i];
-            if (hit == null || hit.transform.root == transform)
-            {
-                continue;
-            }
-
-            if (hit.GetComponentInParent<PlayerController>() == null)
-            {
-                continue;
-            }
-
-            bool duplicate = false;
-            for (int j = 0; j < count; j++)
-            {
-                if (results[j] != null &&
-                    results[j].GetComponentInParent<PlayerController>() ==
-                    hit.GetComponentInParent<PlayerController>())
-                {
-                    duplicate = true;
-                    break;
-                }
-            }
-
-            if (duplicate)
-            {
-                continue;
-            }
-
-            results[count] = hit;
-            count++;
-        }
-
-        for (int i = count; i < results.Length; i++)
-        {
-            results[i] = null;
-        }
-
-        return count;
-    }
-
-    bool CanProcessPlayer(PlayerController player)
-    {
-        if (player == null)
-        {
-            return false;
-        }
-
-        if (RoundManager.Instance != null &&
-            RoundManager.Instance.IsPlayerResolved(player.controlType))
-        {
-            return false;
-        }
-
-        int playerId = player.GetInstanceID();
-        if (interactionCooldownUntil.TryGetValue(playerId, out float cooldownUntil) &&
-            Time.time < cooldownUntil)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    void MarkPlayerProcessed(PlayerController player)
-    {
-        if (player == null)
-        {
-            return;
-        }
-
-        interactionCooldownUntil[player.GetInstanceID()] = Time.time + playerInteractionCooldown;
-    }
-
-    bool CanStompPlayer(PlayerController player, Collider2D playerCollider)
-    {
-        if (player == null || playerCollider == null || backHitbox == null)
-        {
-            return false;
-        }
-
-        Bounds playerBounds = playerCollider.bounds;
-        Bounds backBounds = backHitbox.bounds;
-
-        bool descending = player.VerticalVelocity <= stompMaxVerticalVelocity;
-        bool feetAboveBackCenter = playerBounds.min.y >= backBounds.center.y - 0.01f;
-        bool overlapWidth =
-            playerBounds.max.x > backBounds.min.x + 0.01f &&
-            playerBounds.min.x < backBounds.max.x - 0.01f;
-
-        return descending && feetAboveBackCenter && overlapWidth;
-    }
-
-    bool CanKickShellFromTop(PlayerController player, Collider2D playerCollider)
-    {
-        if (player == null || playerCollider == null || shellTopKickHitbox == null)
-        {
-            return false;
-        }
-
-        Bounds playerBounds = playerCollider.bounds;
-        Bounds topBounds = shellTopKickHitbox.bounds;
-
-        bool descending = player.VerticalVelocity <= stompMaxVerticalVelocity;
-        bool feetAboveTop = playerBounds.min.y >= topBounds.center.y - 0.01f;
-        bool overlapWidth =
-            playerBounds.max.x > topBounds.min.x + 0.01f &&
-            playerBounds.min.x < topBounds.max.x - 0.01f;
-
-        return descending && feetAboveTop && overlapWidth;
-    }
-
-    void EnterShell()
-    {
-        state = BeetleState.ShellIdle;
-        animationTimer = 0f;
-
-        if (rb != null)
-        {
-            rb.velocity = new Vector2(0f, rb.velocity.y);
-        }
-
-        ApplyColliderForState();
-        ApplySprite(0f);
-    }
-
-    void StopShell()
-    {
-        state = BeetleState.ShellIdle;
-
-        if (rb != null)
-        {
-            rb.velocity = new Vector2(0f, rb.velocity.y);
-        }
-
-        ApplyColliderForState();
-    }
-
-    void KickShell(bool kickToRight, Collider2D kickerCollider)
-    {
-        state = BeetleState.ShellMoving;
-        movingRight = kickToRight;
-        ApplyColliderForState();
-
-        float direction = movingRight ? 1f : -1f;
-        transform.position += new Vector3(direction * shellKickNudge, 0f, 0f);
-
-        if (rb != null)
-        {
-            rb.position = transform.position;
-            rb.velocity = new Vector2(direction * shellMoveSpeed, Mathf.Max(0f, rb.velocity.y));
-        }
-
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.flipX = movingRight;
-        }
-
-        if (kickerCollider != null && shellKickIgnoreTime > 0f && bodyCollider != null)
-        {
-            StartCoroutine(TemporarilyIgnoreCollision(kickerCollider));
-        }
-    }
-
-    System.Collections.IEnumerator TemporarilyIgnoreCollision(Collider2D otherCollider)
-    {
-        if (otherCollider == null || bodyCollider == null)
-        {
-            yield break;
-        }
-
-        Physics2D.IgnoreCollision(bodyCollider, otherCollider, true);
-        yield return new WaitForSeconds(shellKickIgnoreTime);
-
-        if (otherCollider != null && bodyCollider != null)
-        {
-            Physics2D.IgnoreCollision(bodyCollider, otherCollider, false);
-        }
     }
 
     void ApplySprite(float timer)
@@ -1330,6 +425,38 @@ public class BlueBeetleEnemy : MonoBehaviour
 
         rb.velocity = new Vector2(horizontalSpeed, upwardForce);
         spriteRenderer.flipX = movingRight;
+    }
+
+    public void LaunchFromBlock(Vector3 position, float horizontalDirection, float horizontalSpeed, float upwardSpeed)
+    {
+        if (rb == null)
+        {
+            CacheComponents();
+        }
+
+        transform.position = position;
+        movingRight = horizontalDirection >= 0f;
+        state = BeetleState.Walking;
+        animationTimer = 0f;
+        lastJumpTime = Time.time;
+
+        if (rb != null)
+        {
+            rb.position = position;
+            rb.velocity = new Vector2(
+                (movingRight ? 1f : -1f) * Mathf.Max(moveSpeed, horizontalSpeed),
+                upwardSpeed
+            );
+            rb.angularVelocity = 0f;
+        }
+
+        ApplyColliderForState();
+        UpdateHitboxes();
+        ApplySprite(0f);
+        spriteRenderer.flipX = movingRight;
+        spawnPosition = position;
+        spawnRotation = transform.rotation;
+        spawnScale = transform.localScale;
     }
 
     void LoadDefaultSpritesIfNeeded()

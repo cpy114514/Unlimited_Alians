@@ -27,6 +27,9 @@ public class MultiplayerCameraFollow : MonoBehaviour
     Camera cam;
     Vector3 velocity;
     readonly List<Vector3> targets = new List<Vector3>();
+    readonly List<Transform> cinematicTargets = new List<Transform>();
+    bool cinematicFocusActive;
+    CameraSettings cinematicSettings;
 
     struct CameraSettings
     {
@@ -58,7 +61,7 @@ public class MultiplayerCameraFollow : MonoBehaviour
 
         CameraSettings settings = usingBuildTargets
             ? GetBuildSettings()
-            : GetRaceSettings();
+            : (cinematicFocusActive ? cinematicSettings : GetRaceSettings());
 
         Move(targets, settings);
         Zoom(targets, settings);
@@ -67,6 +70,29 @@ public class MultiplayerCameraFollow : MonoBehaviour
     bool CollectTargets()
     {
         targets.Clear();
+
+        if (cinematicFocusActive)
+        {
+            for (int i = cinematicTargets.Count - 1; i >= 0; i--)
+            {
+                Transform focusTarget = cinematicTargets[i];
+                if (focusTarget == null)
+                {
+                    cinematicTargets.RemoveAt(i);
+                    continue;
+                }
+
+                targets.Add(focusTarget.position);
+            }
+
+            if (targets.Count > 0)
+            {
+                return false;
+            }
+
+            cinematicTargets.Clear();
+            cinematicFocusActive = false;
+        }
 
         if (BuildPhaseManager.Instance != null &&
             BuildPhaseManager.Instance.TryGetCameraTargetPositions(targets))
@@ -83,6 +109,47 @@ public class MultiplayerCameraFollow : MonoBehaviour
         }
 
         return false;
+    }
+
+    public void SetCinematicFocus(
+        IEnumerable<Transform> focusTargets,
+        float smoothTime,
+        float minZoom,
+        float maxZoom,
+        float zoomLimiter,
+        float zoomLerpSpeed,
+        Vector2 offset
+    )
+    {
+        cinematicTargets.Clear();
+
+        if (focusTargets != null)
+        {
+            foreach (Transform focusTarget in focusTargets)
+            {
+                if (focusTarget != null)
+                {
+                    cinematicTargets.Add(focusTarget);
+                }
+            }
+        }
+
+        cinematicFocusActive = cinematicTargets.Count > 0;
+        cinematicSettings = new CameraSettings
+        {
+            smoothTime = smoothTime,
+            minZoom = minZoom,
+            maxZoom = maxZoom,
+            zoomLimiter = zoomLimiter,
+            zoomLerpSpeed = zoomLerpSpeed,
+            offset = offset
+        };
+    }
+
+    public void ClearCinematicFocus()
+    {
+        cinematicTargets.Clear();
+        cinematicFocusActive = false;
     }
 
     CameraSettings GetRaceSettings()

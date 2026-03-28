@@ -8,11 +8,16 @@ public class PlayerController : MonoBehaviour
     {
         WASD,
         ArrowKeys,
-        IJKL
+        IJKL,
+        Slot4,
+        Slot5,
+        Slot6
     }
 
     [Header("Control")]
     public ControlType controlType;
+    public GameInput.BindingId inputBinding = GameInput.BindingId.KeyboardWasd;
+    public int playerPrefabIndex;
 
     [Header("Movement")]
     public float moveSpeed = 8f;
@@ -62,14 +67,22 @@ public class PlayerController : MonoBehaviour
 
     public LayerMask groundLayer;
 
+    static readonly Vector3 defaultTagMarkerOffset = new Vector3(0f, 1.1f, 0f);
+    static readonly Vector3 defaultTagMarkerScale = new Vector3(0.7f, 0.7f, 1f);
+    static readonly Color defaultTagMarkerColor = Color.white;
+    static readonly Color defaultProtectedTagMarkerColor = new Color(1f, 0.85f, 0.55f, 1f);
+
     Rigidbody2D rb;
     SpriteRenderer sr;
     BoxCollider2D bodyCollider;
+    SpriteRenderer tagMarkerRenderer;
+    readonly Collider2D[] tagOverlapBuffer = new Collider2D[8];
 
     float horizontal;
     bool jumpHeld;
     bool holdJumpQueued;
     bool buildPhaseFrozen;
+    bool externalMotionOnly;
 
     bool isGrounded;
     bool touchingWallLeft;
@@ -92,6 +105,18 @@ public class PlayerController : MonoBehaviour
         {
             idleSprite = sr.sprite;
         }
+
+        EnsureTagMarker();
+        SetTagState(
+            false,
+            false,
+            false,
+            null,
+            defaultTagMarkerOffset,
+            defaultTagMarkerScale,
+            defaultTagMarkerColor,
+            defaultProtectedTagMarkerColor
+        );
     }
 
     void Update()
@@ -127,7 +152,7 @@ public class PlayerController : MonoBehaviour
 
         if (!canControl)
         {
-            if (rb.velocity != Vector2.zero)
+            if (!externalMotionOnly && rb.velocity != Vector2.zero)
             {
                 rb.velocity = Vector2.zero;
             }
@@ -139,6 +164,7 @@ public class PlayerController : MonoBehaviour
         TryStepUp();
         HandleWallSlide();
         BetterJump();
+        CheckTagOverlap();
     }
 
     void ClearInput()
@@ -155,6 +181,7 @@ public class PlayerController : MonoBehaviour
     public void SetControlEnabled(bool enabled)
     {
         canControl = enabled;
+        externalMotionOnly = false;
         ClearInput();
 
         if (!enabled)
@@ -167,6 +194,7 @@ public class PlayerController : MonoBehaviour
     public void SetBuildPhaseFrozen(bool frozen)
     {
         buildPhaseFrozen = frozen;
+        externalMotionOnly = false;
         ClearInput();
 
         if (rb == null)
@@ -189,6 +217,7 @@ public class PlayerController : MonoBehaviour
     public void ResetForNextRound(Vector3 spawnPosition)
     {
         SetBuildPhaseFrozen(false);
+        externalMotionOnly = false;
         transform.position = spawnPosition;
         transform.rotation = Quaternion.identity;
 
@@ -203,6 +232,59 @@ public class PlayerController : MonoBehaviour
         DetectWalls();
         SetSprite(idleSprite);
         SetControlEnabled(true);
+    }
+
+    public void SetExternalMotionOnly(bool active)
+    {
+        externalMotionOnly = active;
+        canControl = !active;
+        ClearInput();
+    }
+
+    public void ApplyAvatarAnimation(Sprite idle, Sprite runA, Sprite runB)
+    {
+        if (idle != null)
+        {
+            idleSprite = idle;
+            SetSprite(idleSprite);
+        }
+
+        runSpriteA = runA;
+        runSpriteB = runB;
+    }
+
+    public void SetTagState(
+        bool isIt,
+        bool isProtected,
+        bool tagModeActive,
+        Sprite markerSprite,
+        Vector3 markerOffset,
+        Vector3 markerScale,
+        Color markerColor,
+        Color protectedMarkerColor
+    )
+    {
+        EnsureTagMarker();
+
+        if (tagMarkerRenderer == null)
+        {
+            return;
+        }
+
+        bool showLabel = tagModeActive && isIt;
+        tagMarkerRenderer.gameObject.SetActive(showLabel);
+
+        if (!showLabel)
+        {
+            return;
+        }
+
+        tagMarkerRenderer.sprite = markerSprite;
+        tagMarkerRenderer.transform.localPosition = markerOffset;
+        tagMarkerRenderer.transform.localScale = markerScale;
+        tagMarkerRenderer.color = isProtected
+            ? protectedMarkerColor
+            : markerColor;
     }
 
     public void MoveToWaitingArea(Vector3 position)
@@ -276,34 +358,40 @@ public class PlayerController : MonoBehaviour
         trampolineContactExpiryTime = Time.time + 0.12f;
     }
 
+    void EnsureTagMarker()
+    {
+        if (tagMarkerRenderer != null)
+        {
+            tagMarkerRenderer.transform.localPosition = defaultTagMarkerOffset;
+            tagMarkerRenderer.transform.localScale = defaultTagMarkerScale;
+            return;
+        }
+
+        Transform existing = transform.Find("TagMarker");
+        if (existing != null)
+        {
+            tagMarkerRenderer = existing.GetComponent<SpriteRenderer>();
+        }
+
+        if (tagMarkerRenderer == null)
+        {
+            GameObject markerObject = new GameObject("TagMarker");
+            markerObject.transform.SetParent(transform, false);
+            tagMarkerRenderer = markerObject.AddComponent<SpriteRenderer>();
+        }
+
+        tagMarkerRenderer.sortingOrder = sr != null ? sr.sortingOrder + 3 : 12;
+        tagMarkerRenderer.color = defaultTagMarkerColor;
+        tagMarkerRenderer.transform.localPosition = defaultTagMarkerOffset;
+        tagMarkerRenderer.transform.localScale = defaultTagMarkerScale;
+        tagMarkerRenderer.gameObject.SetActive(false);
+    }
+
     void HandleInput()
     {
-        horizontal = 0;
-        bool jumpPressed = false;
-
-        switch (controlType)
-        {
-            case ControlType.WASD:
-                if (Input.GetKey(KeyCode.A)) horizontal = -1;
-                if (Input.GetKey(KeyCode.D)) horizontal = 1;
-                jumpHeld = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.Space);
-                jumpPressed = Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.Space);
-                break;
-
-            case ControlType.ArrowKeys:
-                if (Input.GetKey(KeyCode.LeftArrow)) horizontal = -1;
-                if (Input.GetKey(KeyCode.RightArrow)) horizontal = 1;
-                jumpHeld = Input.GetKey(KeyCode.UpArrow);
-                jumpPressed = Input.GetKeyDown(KeyCode.UpArrow);
-                break;
-
-            case ControlType.IJKL:
-                if (Input.GetKey(KeyCode.J)) horizontal = -1;
-                if (Input.GetKey(KeyCode.L)) horizontal = 1;
-                jumpHeld = Input.GetKey(KeyCode.I);
-                jumpPressed = Input.GetKeyDown(KeyCode.I);
-                break;
-        }
+        horizontal = GameInput.GetHorizontal(inputBinding);
+        jumpHeld = GameInput.GetJumpHeld(inputBinding);
+        bool jumpPressed = GameInput.GetJumpPressed(inputBinding);
 
         if (jumpPressed)
         {
@@ -454,7 +542,13 @@ public class PlayerController : MonoBehaviour
 
     void HandleMovement()
     {
-        float targetSpeed = horizontal * moveSpeed;
+        float speedMultiplier = 1f;
+        if (RoundManager.Instance != null)
+        {
+            speedMultiplier = RoundManager.Instance.GetPlayerMoveSpeedMultiplier(controlType);
+        }
+
+        float targetSpeed = horizontal * moveSpeed * speedMultiplier;
         float acceleration;
 
         if (Mathf.Abs(targetSpeed) > 0.01f)
@@ -469,7 +563,7 @@ public class PlayerController : MonoBehaviour
         float newX = Mathf.MoveTowards(
             rb.velocity.x,
             targetSpeed,
-            acceleration * Time.fixedDeltaTime
+            acceleration * Mathf.Max(1f, speedMultiplier) * Time.fixedDeltaTime
         );
 
         rb.velocity = new Vector2(newX, rb.velocity.y);
@@ -636,6 +730,68 @@ public class PlayerController : MonoBehaviour
         }
 
         sr.sprite = sprite;
+    }
+
+    void OnCollisionEnter2D(Collision2D collision)
+    {
+        NotifyTagContact(collision);
+    }
+
+    void OnCollisionStay2D(Collision2D collision)
+    {
+        NotifyTagContact(collision);
+    }
+
+    void NotifyTagContact(Collision2D collision)
+    {
+        if (collision == null)
+        {
+            return;
+        }
+
+        PlayerController otherPlayer = collision.collider != null
+            ? collision.collider.GetComponentInParent<PlayerController>()
+            : null;
+
+        if (otherPlayer == null || otherPlayer == this)
+        {
+            return;
+        }
+
+        RoundManager.Instance?.TryTagContact(this, otherPlayer);
+    }
+
+    void CheckTagOverlap()
+    {
+        if (bodyCollider == null || RoundManager.Instance == null || !RoundManager.Instance.IsTagMode)
+        {
+            return;
+        }
+
+        Bounds bounds = bodyCollider.bounds;
+        int hitCount = Physics2D.OverlapBoxNonAlloc(
+            bounds.center,
+            bounds.size,
+            0f,
+            tagOverlapBuffer
+        );
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider2D hit = tagOverlapBuffer[i];
+            if (hit == null)
+            {
+                continue;
+            }
+
+            PlayerController otherPlayer = hit.GetComponentInParent<PlayerController>();
+            if (otherPlayer == null || otherPlayer == this)
+            {
+                continue;
+            }
+
+            RoundManager.Instance.TryTagContact(this, otherPlayer);
+        }
     }
 
     void OnDrawGizmosSelected()

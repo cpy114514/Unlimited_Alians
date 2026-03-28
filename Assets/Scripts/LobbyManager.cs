@@ -3,118 +3,235 @@ using UnityEngine;
 
 public class LobbyManager : MonoBehaviour
 {
-    [Header("Player Prefabs")]
-    public GameObject wasdPrefab;
-    public GameObject arrowPrefab;
-    public GameObject ijklPrefab;
+    static readonly PlayerController.ControlType[] slotOrder =
+    {
+        PlayerController.ControlType.WASD,
+        PlayerController.ControlType.IJKL,
+        PlayerController.ControlType.ArrowKeys,
+        PlayerController.ControlType.Slot4,
+        PlayerController.ControlType.Slot5,
+        PlayerController.ControlType.Slot6
+    };
+
+    [Header("Base Player")]
+    public PlayerRosterConfig sharedPlayerRosterConfig;
+    public GameObject playerPrefab;
+
+    [Header("Player Avatars")]
+    public List<PlayerAvatarDefinition> playerAvatars = new List<PlayerAvatarDefinition>();
 
     public Transform[] spawnPoints;
-
     public float holdDuration = 1.2f;
 
     readonly Dictionary<PlayerController.ControlType, GameObject> players =
         new Dictionary<PlayerController.ControlType, GameObject>();
 
-    readonly Dictionary<PlayerController.ControlType, float> holdTimers =
-        new Dictionary<PlayerController.ControlType, float>();
+    readonly Dictionary<GameInput.BindingId, PlayerController.ControlType> joinedBindings =
+        new Dictionary<GameInput.BindingId, PlayerController.ControlType>();
 
-    void Start()
-    {
-        TryJoin(PlayerController.ControlType.WASD);
-    }
+    readonly Dictionary<GameInput.BindingId, float> holdTimers =
+        new Dictionary<GameInput.BindingId, float>();
 
     void Update()
     {
         HandleJoin();
         HandleHoldLeave();
+        SyncSessionData();
     }
 
     void HandleJoin()
     {
-        if (Input.GetKeyDown(KeyCode.E))
+        foreach (GameInput.BindingId binding in GameInput.JoinBindings)
         {
-            TryJoin(PlayerController.ControlType.WASD);
-        }
+            if (!GameInput.GetLobbyJoinPressed(binding) || joinedBindings.ContainsKey(binding))
+            {
+                continue;
+            }
 
-        if (Input.GetKeyDown(KeyCode.Return))
-        {
-            TryJoin(PlayerController.ControlType.ArrowKeys);
-        }
-
-        if (Input.GetKeyDown(KeyCode.U))
-        {
-            TryJoin(PlayerController.ControlType.IJKL);
+            TryJoin(binding);
         }
     }
 
     void HandleHoldLeave()
     {
-        HandleSingleHoldLeave(PlayerController.ControlType.WASD, KeyCode.Q);
-        HandleSingleHoldLeave(PlayerController.ControlType.ArrowKeys, KeyCode.RightShift);
-        HandleSingleHoldLeave(PlayerController.ControlType.IJKL, KeyCode.O);
-    }
+        List<GameInput.BindingId> bindings = new List<GameInput.BindingId>(joinedBindings.Keys);
 
-    void HandleSingleHoldLeave(PlayerController.ControlType type, KeyCode key)
-    {
-        if (!players.ContainsKey(type))
+        foreach (GameInput.BindingId binding in bindings)
         {
-            return;
-        }
-
-        if (Input.GetKey(key))
-        {
-            if (!holdTimers.ContainsKey(type))
+            if (!joinedBindings.TryGetValue(binding, out PlayerController.ControlType slot) ||
+                !players.ContainsKey(slot))
             {
-                holdTimers[type] = 0f;
+                continue;
             }
 
-            holdTimers[type] += Time.deltaTime;
-
-            if (holdTimers[type] >= holdDuration)
+            if (GameInput.GetRotateHeld(binding))
             {
-                Destroy(players[type]);
-                players.Remove(type);
-                holdTimers.Remove(type);
+                if (!holdTimers.ContainsKey(binding))
+                {
+                    holdTimers[binding] = 0f;
+                }
+
+                holdTimers[binding] += Time.deltaTime;
+
+                if (holdTimers[binding] >= holdDuration)
+                {
+                    Destroy(players[slot]);
+                    players.Remove(slot);
+                    joinedBindings.Remove(binding);
+                    holdTimers.Remove(binding);
+                }
+            }
+            else if (holdTimers.ContainsKey(binding))
+            {
+                holdTimers[binding] = 0f;
             }
         }
-        else if (holdTimers.ContainsKey(type))
-        {
-            holdTimers[type] = 0f;
-        }
     }
 
-    void TryJoin(PlayerController.ControlType type)
+    void TryJoin(GameInput.BindingId binding)
     {
-        if (players.ContainsKey(type))
+        PlayerController.ControlType? nextSlot = GetNextFreeSlot();
+        if (!nextSlot.HasValue)
         {
             return;
         }
 
-        int index = players.Count;
-        if (index >= spawnPoints.Length)
+        int slotIndex = GetSlotIndex(nextSlot.Value);
+        if (slotIndex < 0 || slotIndex >= spawnPoints.Length)
         {
             return;
         }
 
-        GameObject prefab = GetPrefab(type);
-        GameObject playerObject = Instantiate(prefab, spawnPoints[index].position, Quaternion.identity);
+        GameObject prefab = GetPrefab(slotIndex, nextSlot.Value);
+        if (prefab == null)
+        {
+            Debug.LogError("LobbyManager: missing player avatar prefab for slot index " + slotIndex);
+            return;
+        }
 
-        playerObject.GetComponent<PlayerController>().controlType = type;
-        players.Add(type, playerObject);
+        GameObject playerObject = Instantiate(prefab, spawnPoints[slotIndex].position, Quaternion.identity);
+        PlayerController controller = playerObject.GetComponent<PlayerController>();
+        if (controller == null)
+        {
+            Debug.LogError("LobbyManager: spawned prefab does not contain PlayerController.");
+            Destroy(playerObject);
+            return;
+        }
+
+        controller.controlType = nextSlot.Value;
+        controller.inputBinding = binding;
+        controller.playerPrefabIndex = slotIndex;
+        ApplyAvatarDefinition(controller, slotIndex);
+
+        players[nextSlot.Value] = playerObject;
+        joinedBindings[binding] = nextSlot.Value;
     }
 
-    GameObject GetPrefab(PlayerController.ControlType type)
+    void SyncSessionData()
     {
-        switch (type)
+        if (PlayerSessionManager.Instance == null)
         {
-            case PlayerController.ControlType.WASD:
-                return wasdPrefab;
-            case PlayerController.ControlType.ArrowKeys:
-                return arrowPrefab;
-            case PlayerController.ControlType.IJKL:
-                return ijklPrefab;
+            return;
+        }
+
+        List<PlayerSessionManager.SessionPlayer> sessionPlayers =
+            new List<PlayerSessionManager.SessionPlayer>();
+
+        foreach (PlayerController.ControlType slot in slotOrder)
+        {
+            if (!players.TryGetValue(slot, out GameObject playerObject) || playerObject == null)
+            {
+                continue;
+            }
+
+            PlayerController controller = playerObject.GetComponent<PlayerController>();
+            if (controller == null)
+            {
+                continue;
+            }
+
+            sessionPlayers.Add(new PlayerSessionManager.SessionPlayer
+            {
+                slot = slot,
+                binding = controller.inputBinding,
+                prefabIndex = controller.playerPrefabIndex
+            });
+        }
+
+        PlayerSessionManager.Instance.SetSessionPlayers(sessionPlayers);
+    }
+
+    PlayerController.ControlType? GetNextFreeSlot()
+    {
+        int maxSlots = Mathf.Min(spawnPoints != null ? spawnPoints.Length : 0, slotOrder.Length);
+
+        for (int i = 0; i < maxSlots; i++)
+        {
+            if (!players.ContainsKey(slotOrder[i]))
+            {
+                return slotOrder[i];
+            }
         }
 
         return null;
+    }
+
+    int GetSlotIndex(PlayerController.ControlType slot)
+    {
+        for (int i = 0; i < slotOrder.Length; i++)
+        {
+            if (slotOrder[i] == slot)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    GameObject GetPrefab(int prefabIndex, PlayerController.ControlType slot)
+    {
+        if (sharedPlayerRosterConfig != null && sharedPlayerRosterConfig.playerPrefab != null)
+        {
+            return sharedPlayerRosterConfig.playerPrefab;
+        }
+
+        if (playerPrefab != null)
+        {
+            return playerPrefab;
+        }
+
+        return null;
+    }
+
+    void ApplyAvatarDefinition(PlayerController controller, int prefabIndex)
+    {
+        if (controller == null)
+        {
+            return;
+        }
+
+        List<PlayerAvatarDefinition> avatars = sharedPlayerRosterConfig != null
+            ? sharedPlayerRosterConfig.playerAvatars
+            : playerAvatars;
+
+        if (avatars == null ||
+            prefabIndex < 0 ||
+            prefabIndex >= avatars.Count)
+        {
+            return;
+        }
+
+        PlayerAvatarDefinition avatar = avatars[prefabIndex];
+        if (avatar == null)
+        {
+            return;
+        }
+
+        controller.ApplyAvatarAnimation(
+            avatar.idleSprite,
+            avatar.runSpriteA,
+            avatar.runSpriteB
+        );
     }
 }

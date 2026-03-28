@@ -388,6 +388,11 @@ MonoBehaviour:
   stepForwardNudge: 0.08
   maxStepDownHeight: 1.05
   maxJumpableHeight: 2.8
+  smallPlatformWidthThreshold: 2.35
+  smallPlatformMaxDropHeight: 3.5
+  smallPlatformSearchDistance: 3.2
+  smallPlatformProbeStep: 0.35
+  platformHeightTolerance: 0.35
   trampolineJumpBonusScale: 0.25
   trampolineJumpHeightBonusScale: 0.05
   trampolineAvoidNearDistance: 0.4
@@ -598,7 +603,7 @@ BoxCollider2D:
   m_IsTrigger: 1
   m_UsedByEffector: 0
   m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0.08}
+  m_Offset: {x: 0.00029945374, y: 0.2417156}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -609,7 +614,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 0.54, y: 0.16}
+  m_Size: {x: 0.7201842, y: 0.18524602}
   m_EdgeRadius: 0
 --- !u!1 &6990408264037622313
 GameObject:
@@ -752,7 +757,7 @@ BoxCollider2D:
   m_IsTrigger: 1
   m_UsedByEffector: 0
   m_UsedByComposite: 0
-  m_Offset: {x: 0, y: -0.06}
+  m_Offset: {x: -0.0035163462, y: -0.08672419}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -763,7 +768,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 0.76, y: 0.42}
+  m_Size: {x: 0.8007894, y: 0.6028494}
   m_EdgeRadius: 0
 --- !u!1 &8015441229877203876
 GameObject:

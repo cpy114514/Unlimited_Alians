@@ -7,7 +7,7 @@ using UnityEngine.Tilemaps;
 using UnityEditor;
 #endif
 
-public class BuildPhaseManager : MonoBehaviour
+public partial class BuildPhaseManager : MonoBehaviour
 {
     enum BuildPhase
     {
@@ -58,6 +58,7 @@ public class BuildPhaseManager : MonoBehaviour
     class PlayerBuildState
     {
         public PlayerController.ControlType controlType;
+        public GameInput.BindingId binding;
         public Vector2Int selectionGrid;
         public bool selected;
         public int selectedEntryIndex = -1;
@@ -106,10 +107,12 @@ public class BuildPhaseManager : MonoBehaviour
     TextMeshProUGUI hintText;
     readonly List<Image> cardImages = new List<Image>();
     readonly List<TextMeshProUGUI> cardTexts = new List<TextMeshProUGUI>();
+    readonly List<RectTransform> cardPreviewRoots = new List<RectTransform>();
+    readonly List<Image> cardPreviewSprites = new List<Image>();
+    readonly List<List<Image>> cardPreviewCells = new List<List<Image>>();
+    readonly List<List<Image>> cardSelectionSegments = new List<List<Image>>();
     readonly Dictionary<PlayerController.ControlType, TextMeshProUGUI> playerStatusTexts =
         new Dictionary<PlayerController.ControlType, TextMeshProUGUI>();
-    readonly Dictionary<PlayerController.ControlType, Image> selectionPointers =
-        new Dictionary<PlayerController.ControlType, Image>();
 
     Sprite squareSprite;
     Sprite blockSprite;
@@ -130,10 +133,6 @@ public class BuildPhaseManager : MonoBehaviour
     Material placementGridMaterial;
 
     BuildPhase phase = BuildPhase.Idle;
-    GUIStyle titleGuiStyle;
-    GUIStyle hintGuiStyle;
-    GUIStyle cardGuiStyle;
-    GUIStyle statusGuiStyle;
 
     void Awake()
     {
@@ -207,7 +206,7 @@ public class BuildPhaseManager : MonoBehaviour
         }
 
         SetPlayersFrozenForBuildPhase(true);
-        HideOverlay();
+        ShowOverlay();
         RefreshSelectionUi();
     }
 
@@ -438,473 +437,6 @@ public class BuildPhaseManager : MonoBehaviour
         }
     }
 
-    void EnsureUi()
-    {
-        if (canvas == null)
-        {
-            canvas = FindObjectOfType<Canvas>(true);
-        }
-
-        if (canvas == null)
-        {
-            canvas = CreateRuntimeCanvas();
-        }
-
-        if (canvas == null || overlayPanel != null)
-        {
-            return;
-        }
-
-        overlayPanel = CreateUiObject("BuildOverlay", canvas.transform).gameObject;
-        overlayImage = overlayPanel.AddComponent<Image>();
-        overlayImage.color = new Color(0.06f, 0.06f, 0.08f, 0.84f);
-        RectTransform panelRect = overlayPanel.GetComponent<RectTransform>();
-        panelRect.anchorMin = Vector2.zero;
-        panelRect.anchorMax = Vector2.one;
-        panelRect.offsetMin = Vector2.zero;
-        panelRect.offsetMax = Vector2.zero;
-
-        titleText = CreateLabel("Title", overlayPanel.transform, 42f, TextAlignmentOptions.Center);
-        titleText.rectTransform.anchorMin = new Vector2(0.5f, 1f);
-        titleText.rectTransform.anchorMax = new Vector2(0.5f, 1f);
-        titleText.rectTransform.pivot = new Vector2(0.5f, 1f);
-        titleText.rectTransform.anchoredPosition = new Vector2(0f, -48f);
-        titleText.rectTransform.sizeDelta = new Vector2(960f, 60f);
-
-        hintText = CreateLabel("Hint", overlayPanel.transform, 24f, TextAlignmentOptions.Center);
-        hintText.rectTransform.anchorMin = new Vector2(0.5f, 1f);
-        hintText.rectTransform.anchorMax = new Vector2(0.5f, 1f);
-        hintText.rectTransform.pivot = new Vector2(0.5f, 1f);
-        hintText.rectTransform.anchoredPosition = new Vector2(0f, -98f);
-        hintText.rectTransform.sizeDelta = new Vector2(1100f, 60f);
-        hintText.enableWordWrapping = true;
-
-        for (int i = 0; i < 6; i++)
-        {
-            RectTransform cardRect = CreateUiObject("Card" + i, overlayPanel.transform);
-            cardRect.sizeDelta = new Vector2(250f, 120f);
-
-            Image cardImage = cardRect.gameObject.AddComponent<Image>();
-            cardImage.color = new Color(0.17f, 0.17f, 0.2f, 0.96f);
-            cardImages.Add(cardImage);
-
-            TextMeshProUGUI cardText = CreateLabel("CardText" + i, cardRect, 28f, TextAlignmentOptions.Center);
-            cardText.rectTransform.anchorMin = Vector2.zero;
-            cardText.rectTransform.anchorMax = Vector2.one;
-            cardText.rectTransform.offsetMin = new Vector2(12f, 12f);
-            cardText.rectTransform.offsetMax = new Vector2(-12f, -12f);
-            cardTexts.Add(cardText);
-        }
-
-        foreach (PlayerController.ControlType type in System.Enum.GetValues(typeof(PlayerController.ControlType)))
-        {
-            Image pointer = CreateUiObject(type + "Pointer", overlayPanel.transform).gameObject.AddComponent<Image>();
-            pointer.color = GetPlayerColor(type);
-            pointer.rectTransform.sizeDelta = new Vector2(14f, 14f);
-            selectionPointers[type] = pointer;
-
-            TextMeshProUGUI status = CreateLabel(type + "Status", overlayPanel.transform, 26f, TextAlignmentOptions.Left);
-            playerStatusTexts[type] = status;
-        }
-    }
-
-    RectTransform CreateUiObject(string name, Transform parent)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform));
-        go.transform.SetParent(parent, false);
-        return go.GetComponent<RectTransform>();
-    }
-
-    TextMeshProUGUI CreateLabel(
-        string name,
-        Transform parent,
-        float fontSize,
-        TextAlignmentOptions alignment
-    )
-    {
-        RectTransform rect = CreateUiObject(name, parent);
-        TextMeshProUGUI text = rect.gameObject.AddComponent<TextMeshProUGUI>();
-        text.fontSize = fontSize;
-        text.alignment = alignment;
-        text.color = Color.white;
-        text.font = TMP_Settings.defaultFontAsset;
-        text.text = string.Empty;
-        return text;
-    }
-
-    void ShowOverlay()
-    {
-        if (overlayPanel != null)
-        {
-            overlayPanel.SetActive(true);
-        }
-    }
-
-    void HideOverlay()
-    {
-        if (overlayPanel != null)
-        {
-            overlayPanel.SetActive(false);
-        }
-    }
-
-    void EnsureGuiStyles()
-    {
-        if (titleGuiStyle != null)
-        {
-            return;
-        }
-
-        titleGuiStyle = new GUIStyle(GUI.skin.label);
-        titleGuiStyle.alignment = TextAnchor.MiddleCenter;
-        titleGuiStyle.fontSize = 30;
-        titleGuiStyle.fontStyle = FontStyle.Bold;
-        titleGuiStyle.normal.textColor = Color.white;
-
-        hintGuiStyle = new GUIStyle(GUI.skin.label);
-        hintGuiStyle.alignment = TextAnchor.MiddleCenter;
-        hintGuiStyle.fontSize = 16;
-        hintGuiStyle.wordWrap = true;
-        hintGuiStyle.normal.textColor = new Color(0.9f, 0.92f, 0.96f);
-
-        cardGuiStyle = new GUIStyle(GUI.skin.label);
-        cardGuiStyle.alignment = TextAnchor.MiddleCenter;
-        cardGuiStyle.fontSize = 18;
-        cardGuiStyle.fontStyle = FontStyle.Bold;
-        cardGuiStyle.wordWrap = true;
-        cardGuiStyle.normal.textColor = Color.white;
-
-        statusGuiStyle = new GUIStyle(GUI.skin.label);
-        statusGuiStyle.alignment = TextAnchor.MiddleCenter;
-        statusGuiStyle.fontSize = 18;
-        statusGuiStyle.wordWrap = true;
-        statusGuiStyle.normal.textColor = Color.white;
-    }
-
-    void DrawSelectionGui()
-    {
-        GUI.Label(
-            new Rect(Screen.width * 0.5f - 260f, 26f, 520f, 42f),
-            "Party Box",
-            titleGuiStyle
-        );
-        GUI.Label(
-            new Rect(Screen.width * 0.5f - 560f, 64f, 1120f, 40f),
-            "Everyone grabs one item. Move: WASD / IJKL / Arrows    Confirm: E/Space / U / Enter",
-            hintGuiStyle
-        );
-
-        int columns = 3;
-        int rows = Mathf.Max(1, Mathf.CeilToInt(currentPool.Count / 3f));
-        float cardWidth = Mathf.Min(260f, Screen.width * 0.24f);
-        float cardHeight = 118f;
-        float gapX = 22f;
-        float gapY = 18f;
-        float totalWidth = columns * cardWidth + (columns - 1) * gapX;
-        float totalHeight = rows * cardHeight + (rows - 1) * gapY;
-        float startX = (Screen.width - totalWidth) * 0.5f;
-        float startY = Mathf.Clamp((Screen.height - totalHeight) * 0.36f, 120f, 220f);
-
-        for (int i = 0; i < currentPool.Count; i++)
-        {
-            int row = i / columns;
-            int column = i % columns;
-            Rect cardRect = new Rect(
-                startX + column * (cardWidth + gapX),
-                startY + row * (cardHeight + gapY),
-                cardWidth,
-                cardHeight
-            );
-
-            DrawCardBackground(cardRect, i);
-            DrawSelectionMarkers(cardRect, i);
-
-            PoolEntry entry = currentPool[i];
-            DrawCardPreview(cardRect, entry.definition);
-            string ownerText = entry.owner.HasValue ? "\n" + GetDisplayName(entry.owner.Value) : string.Empty;
-            Rect labelRect = new Rect(
-                cardRect.x + 10f,
-                cardRect.y + 70f,
-                cardRect.width - 20f,
-                cardRect.height - 78f
-            );
-            GUI.Label(labelRect, entry.definition.displayName + ownerText, cardGuiStyle);
-        }
-
-        DrawStatusBar(false);
-    }
-
-    void DrawPlacementGui()
-    {
-        GUI.Label(
-            new Rect(Screen.width * 0.5f - 320f, 24f, 640f, 42f),
-            "Place Your Item",
-            titleGuiStyle
-        );
-        GUI.Label(
-            new Rect(Screen.width * 0.5f - 620f, 60f, 1240f, 40f),
-            "Move cursor: WASD / IJKL / Arrows    Rotate: Q / O / RightShift    Place: E/Space / U / Enter",
-            hintGuiStyle
-        );
-
-        DrawStatusBar(true);
-    }
-
-    void DrawCardBackground(Rect cardRect, int index)
-    {
-        PoolEntry entry = currentPool[index];
-        Color backgroundColor = entry.taken
-            ? new Color(0.22f, 0.22f, 0.24f, 0.96f)
-            : new Color(0.15f, 0.15f, 0.18f, 0.98f);
-
-        if (entry.owner.HasValue)
-        {
-            Color ownerColor = GetPlayerColor(entry.owner.Value);
-            backgroundColor = new Color(ownerColor.r * 0.38f, ownerColor.g * 0.38f, ownerColor.b * 0.38f, 0.98f);
-        }
-
-        Color previousColor = GUI.color;
-        GUI.color = backgroundColor;
-        GUI.DrawTexture(cardRect, Texture2D.whiteTexture);
-        GUI.color = new Color(0f, 0f, 0f, 0.36f);
-        GUI.DrawTexture(
-            new Rect(cardRect.x + 3f, cardRect.y + 3f, cardRect.width - 6f, cardRect.height - 6f),
-            Texture2D.whiteTexture
-        );
-        GUI.color = previousColor;
-    }
-
-    void DrawCardPreview(Rect cardRect, BuildItemDefinition definition)
-    {
-        Rect previewRect = new Rect(
-            cardRect.x + 14f,
-            cardRect.y + 14f,
-            cardRect.width - 28f,
-            46f
-        );
-
-        if (definition.isCoin)
-        {
-            DrawSpritePreview(previewRect, coinTemplate != null ? coinTemplate.frameA : null, Color.white);
-            return;
-        }
-
-        if (definition.isTrampoline)
-        {
-            DrawSpritePreview(previewRect, trampolineTemplate != null ? trampolineTemplate.idleSprite : null, Color.white);
-            return;
-        }
-
-        if (definition.isLauncher)
-        {
-            DrawSpritePreview(previewRect, launcherTemplate != null ? launcherTemplate.launcherSprite : null, Color.white);
-            return;
-        }
-
-        if (definition.isPortal)
-        {
-            DrawSpritePreview(previewRect, portalDoorSprite, Color.white);
-            return;
-        }
-
-        DrawBlockShapePreview(previewRect, definition.cells);
-    }
-
-    void DrawSpritePreview(Rect previewRect, Sprite sprite, Color tint)
-    {
-        Color previousColor = GUI.color;
-        GUI.color = tint;
-
-        if (sprite != null && sprite.texture != null)
-        {
-            GUI.DrawTextureWithTexCoords(
-                FitRectToSprite(previewRect, sprite),
-                sprite.texture,
-                GetSpriteUv(sprite)
-            );
-        }
-        else
-        {
-            GUI.DrawTexture(previewRect, Texture2D.whiteTexture);
-        }
-
-        GUI.color = previousColor;
-    }
-
-    void DrawBlockShapePreview(Rect previewRect, Vector2Int[] cells)
-    {
-        if (cells == null || cells.Length == 0)
-        {
-            return;
-        }
-
-        int minX = int.MaxValue;
-        int minY = int.MaxValue;
-        int maxX = int.MinValue;
-        int maxY = int.MinValue;
-
-        foreach (Vector2Int cell in cells)
-        {
-            minX = Mathf.Min(minX, cell.x);
-            minY = Mathf.Min(minY, cell.y);
-            maxX = Mathf.Max(maxX, cell.x);
-            maxY = Mathf.Max(maxY, cell.y);
-        }
-
-        int width = maxX - minX + 1;
-        int height = maxY - minY + 1;
-        float cellSize = Mathf.Min(previewRect.width / width, previewRect.height / height);
-        float totalWidth = width * cellSize;
-        float totalHeight = height * cellSize;
-        float originX = previewRect.x + (previewRect.width - totalWidth) * 0.5f;
-        float originY = previewRect.y + (previewRect.height - totalHeight) * 0.5f;
-
-        foreach (Vector2Int cell in cells)
-        {
-            float x = originX + (cell.x - minX) * cellSize;
-            float y = originY + (maxY - cell.y) * cellSize;
-            Rect cellRect = new Rect(x + 1f, y + 1f, cellSize - 2f, cellSize - 2f);
-            DrawSpritePreview(cellRect, blockSprite, new Color(0.95f, 0.93f, 0.88f, 1f));
-        }
-    }
-
-    Rect FitRectToSprite(Rect target, Sprite sprite)
-    {
-        if (sprite == null)
-        {
-            return target;
-        }
-
-        float spriteAspect = sprite.rect.width / Mathf.Max(1f, sprite.rect.height);
-        float targetAspect = target.width / Mathf.Max(1f, target.height);
-
-        if (spriteAspect > targetAspect)
-        {
-            float height = target.width / spriteAspect;
-            return new Rect(target.x, target.y + (target.height - height) * 0.5f, target.width, height);
-        }
-
-        float width = target.height * spriteAspect;
-        return new Rect(target.x + (target.width - width) * 0.5f, target.y, width, target.height);
-    }
-
-    Rect GetSpriteUv(Sprite sprite)
-    {
-        if (sprite == null || sprite.texture == null)
-        {
-            return new Rect(0f, 0f, 1f, 1f);
-        }
-
-        Rect rect = sprite.rect;
-        Texture texture = sprite.texture;
-        return new Rect(
-            rect.x / texture.width,
-            rect.y / texture.height,
-            rect.width / texture.width,
-            rect.height / texture.height
-        );
-    }
-
-    void DrawSelectionMarkers(Rect cardRect, int index)
-    {
-        List<PlayerController.ControlType> hoveredPlayers =
-            new List<PlayerController.ControlType>();
-
-        foreach (KeyValuePair<PlayerController.ControlType, PlayerBuildState> playerEntry in playerStates)
-        {
-            PlayerBuildState state = playerEntry.Value;
-            if (state.selected || GetSelectionIndex(state.selectionGrid) != index)
-            {
-                continue;
-            }
-
-            hoveredPlayers.Add(playerEntry.Key);
-        }
-
-        if (hoveredPlayers.Count == 0)
-        {
-            return;
-        }
-
-        float totalWidth = cardRect.width - 16f;
-        float segmentWidth = totalWidth / hoveredPlayers.Count;
-
-        for (int i = 0; i < hoveredPlayers.Count; i++)
-        {
-            Color previousColor = GUI.color;
-            GUI.color = GetPlayerColor(hoveredPlayers[i]);
-            GUI.DrawTexture(
-                new Rect(cardRect.x + 8f + i * segmentWidth, cardRect.y + 8f, segmentWidth, 6f),
-                Texture2D.whiteTexture
-            );
-            GUI.color = previousColor;
-        }
-    }
-
-    void DrawStatusBar(bool placementPhase)
-    {
-        if (GameManager.Instance == null)
-        {
-            return;
-        }
-
-        List<PlayerController.ControlType> players = GameManager.Instance.GetSessionPlayers();
-        if (players.Count == 0)
-        {
-            return;
-        }
-
-        float boxWidth = Mathf.Min(320f, Screen.width / 3.5f);
-        float boxHeight = 64f;
-        float gap = 18f;
-        float totalWidth = players.Count * boxWidth + (players.Count - 1) * gap;
-        float startX = (Screen.width - totalWidth) * 0.5f;
-        float y = Screen.height - boxHeight - 24f;
-
-        for (int i = 0; i < players.Count; i++)
-        {
-            PlayerController.ControlType player = players[i];
-            if (!playerStates.TryGetValue(player, out PlayerBuildState state))
-            {
-                continue;
-            }
-
-            Rect rect = new Rect(startX + i * (boxWidth + gap), y, boxWidth, boxHeight);
-            Color playerColor = GetPlayerColor(player);
-            Color previousColor = GUI.color;
-            GUI.color = new Color(playerColor.r * 0.34f, playerColor.g * 0.34f, playerColor.b * 0.34f, 0.95f);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = previousColor;
-
-            statusGuiStyle.normal.textColor = playerColor;
-            GUI.Label(rect, GetStatusText(player, state, placementPhase), statusGuiStyle);
-        }
-
-        statusGuiStyle.normal.textColor = Color.white;
-    }
-
-    string GetStatusText(
-        PlayerController.ControlType player,
-        PlayerBuildState state,
-        bool placementPhase
-    )
-    {
-        if (!placementPhase)
-        {
-            return state.selected
-                ? GetDisplayName(player) + "\n" + currentPool[state.selectedEntryIndex].definition.displayName
-                : GetDisplayName(player) + "\nChoosing...";
-        }
-
-        if (state.placed)
-        {
-            return GetDisplayName(player) + "\nPlaced";
-        }
-
-        return GetDisplayName(player) + "\n" +
-               currentPool[state.selectedEntryIndex].definition.displayName;
-    }
-
     void SetPlayersFrozenForBuildPhase(bool frozen)
     {
         if (GameManager.Instance == null)
@@ -921,39 +453,6 @@ public class BuildPhaseManager : MonoBehaviour
         }
     }
 
-    void SyncOverlayVisibility()
-    {
-        if (phase == BuildPhase.Selection || phase == BuildPhase.Placement)
-        {
-            ShowOverlay();
-            return;
-        }
-
-        HideOverlay();
-    }
-
-    Canvas CreateRuntimeCanvas()
-    {
-        GameObject canvasObject = new GameObject(
-            "RuntimeBuildCanvas",
-            typeof(RectTransform),
-            typeof(Canvas),
-            typeof(CanvasScaler),
-            typeof(GraphicRaycaster)
-        );
-        Canvas runtimeCanvas = canvasObject.GetComponent<Canvas>();
-        runtimeCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-
-        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
-
-        Debug.LogWarning("BuildPhaseManager: no Canvas found in scene, created RuntimeBuildCanvas.");
-        return runtimeCanvas;
-    }
-
     void ResetPlayerStates()
     {
         foreach (PlayerBuildState state in playerStates.Values)
@@ -968,17 +467,20 @@ public class BuildPhaseManager : MonoBehaviour
             return;
         }
 
-        List<PlayerController.ControlType> players = GameManager.Instance.GetSessionPlayers();
+        List<PlayerSessionManager.SessionPlayer> players = GameManager.Instance.GetSessionPlayerInfos();
         Vector2Int startCell = ClampToBounds(Vector2Int.RoundToInt(GetMapCenter()));
 
         for (int i = 0; i < players.Count; i++)
         {
-            playerStates[players[i]] = new PlayerBuildState
+            playerStates[players[i].slot] = new PlayerBuildState
             {
-                controlType = players[i],
+                controlType = players[i].slot,
+                binding = players[i].binding,
                 selectionGrid = new Vector2Int(i % 3, i / 3),
                 placementCell = ClampToBounds(startCell + new Vector2Int(i * 2 - 2, 0)),
-                rotation = 0
+                rotation = 0,
+                nextHorizontalRepeatTime = 0f,
+                nextVerticalRepeatTime = 0f
             };
         }
     }
@@ -986,7 +488,10 @@ public class BuildPhaseManager : MonoBehaviour
     void GeneratePool()
     {
         currentPool.Clear();
-        int poolCount = Random.Range(5, 7);
+        int activePlayerCount = GameManager.Instance != null
+            ? GameManager.Instance.GetSessionPlayers().Count
+            : playerStates.Count;
+        int poolCount = activePlayerCount <= 3 ? 6 : 9;
 
         for (int i = 0; i < poolCount; i++)
         {
@@ -1004,13 +509,13 @@ public class BuildPhaseManager : MonoBehaviour
                 continue;
             }
 
-            Vector2Int move = GetSelectionMove(state.controlType);
+            Vector2Int move = GetSelectionMove(state.binding);
             if (move != Vector2Int.zero)
             {
                 int columns = 3;
                 int rows = Mathf.Max(1, Mathf.CeilToInt(currentPool.Count / 3f));
                 state.selectionGrid.x = Mathf.Clamp(state.selectionGrid.x + move.x, 0, columns - 1);
-                state.selectionGrid.y = Mathf.Clamp(state.selectionGrid.y + move.y, 0, rows - 1);
+                state.selectionGrid.y = Mathf.Clamp(state.selectionGrid.y - move.y, 0, rows - 1);
                 int index = GetSelectionIndex(state.selectionGrid);
                 if (index >= currentPool.Count)
                 {
@@ -1019,7 +524,7 @@ public class BuildPhaseManager : MonoBehaviour
                 RefreshSelectionUi();
             }
 
-            if (!GetConfirmPressed(state.controlType))
+            if (!GetConfirmPressed(state.binding))
             {
                 continue;
             }
@@ -1057,12 +562,7 @@ public class BuildPhaseManager : MonoBehaviour
             overlayImage.color = new Color(0.04f, 0.04f, 0.06f, 0.22f);
         }
         titleText.text = "Place Your Item";
-        hintText.text = "Move cursor: WASD / IJKL / Arrows   Rotate: Q / O / RightShift   Place: E / U / Enter";
-
-        foreach (Image pointer in selectionPointers.Values)
-        {
-            pointer.gameObject.SetActive(false);
-        }
+        hintText.text = "Move cursor: Keyboard / Gamepad   Rotate: Q / O / RightShift / B   Place: E / U / Enter / A";
 
         for (int i = 0; i < cardImages.Count; i++)
         {
@@ -1074,11 +574,13 @@ public class BuildPhaseManager : MonoBehaviour
             state.placed = false;
             state.rotation = 0;
             state.placementCell = ClampToBounds(Vector2Int.RoundToInt(GetMapCenter()));
+            state.nextHorizontalRepeatTime = 0f;
+            state.nextVerticalRepeatTime = 0f;
             RebuildPreview(state);
         }
 
         RebuildPlacementGridVisuals();
-        HideOverlay();
+        ShowOverlay();
         RefreshPlacementUi();
     }
 
@@ -1101,7 +603,7 @@ public class BuildPhaseManager : MonoBehaviour
 
             PoolEntry entry = currentPool[state.selectedEntryIndex];
 
-            if (GetRotatePressed(state.controlType))
+            if (GetRotatePressed(state.binding))
             {
                 state.rotation = GetNextPlacementRotation(entry.definition, state.rotation);
                 changed = true;
@@ -1113,7 +615,7 @@ public class BuildPhaseManager : MonoBehaviour
                 RefreshPlacementUi();
             }
 
-            if (!GetConfirmPressed(state.controlType))
+            if (!GetConfirmPressed(state.binding))
             {
                 continue;
             }
@@ -1149,287 +651,35 @@ public class BuildPhaseManager : MonoBehaviour
         {
             GameManager.Instance.SetAllPlayerControl(true);
         }
+
+        RoundManager.Instance?.BeginRacePhase();
     }
 
-    void OnGUI()
+    Vector2Int GetSelectionMove(GameInput.BindingId binding)
     {
-        if (phase != BuildPhase.Selection && phase != BuildPhase.Placement)
-        {
-            return;
-        }
-
-        EnsureGuiStyles();
-
-        Color previousColor = GUI.color;
-        GUI.color = phase == BuildPhase.Selection
-            ? new Color(0.05f, 0.05f, 0.08f, 0.9f)
-            : new Color(0.04f, 0.04f, 0.06f, 0.12f);
-        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-        GUI.color = previousColor;
-
-        if (phase == BuildPhase.Selection)
-        {
-            DrawSelectionGui();
-        }
-        else
-        {
-            DrawPlacementGui();
-        }
-    }
-
-    void RefreshSelectionUi()
-    {
-        if (overlayPanel == null)
-        {
-            return;
-        }
-
-        titleText.text = "Party Box";
-        hintText.text = "Everyone grabs one item. Confirm: E / U / Enter";
-
-        const int columns = 3;
-        const float cardWidth = 250f;
-        const float cardSpacingX = 280f;
-        const float cardSpacingY = 150f;
-
-        for (int i = 0; i < cardImages.Count; i++)
-        {
-            bool visible = i < currentPool.Count;
-            cardImages[i].gameObject.SetActive(visible);
-            if (!visible)
-            {
-                continue;
-            }
-
-            int row = i / columns;
-            int column = i % columns;
-            RectTransform rect = cardImages[i].rectTransform;
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(cardWidth, 120f);
-            rect.anchoredPosition = new Vector2(
-                (column - 1) * cardSpacingX,
-                120f - row * cardSpacingY
-            );
-
-            PoolEntry entry = currentPool[i];
-            cardImages[i].color = entry.taken
-                ? new Color(0.18f, 0.18f, 0.18f, 0.75f)
-                : new Color(0.17f, 0.17f, 0.2f, 0.96f);
-
-            string takenBy = entry.owner.HasValue ? "\n" + GetDisplayName(entry.owner.Value) : string.Empty;
-            cardTexts[i].text = entry.definition.displayName + takenBy;
-            cardTexts[i].color = entry.owner.HasValue ? GetPlayerColor(entry.owner.Value) : Color.white;
-        }
-
-        foreach (KeyValuePair<PlayerController.ControlType, PlayerBuildState> playerEntry in playerStates)
-        {
-            PlayerController.ControlType player = playerEntry.Key;
-            PlayerBuildState state = playerEntry.Value;
-
-            Image pointer = selectionPointers[player];
-            if (state.selected)
-            {
-                pointer.gameObject.SetActive(false);
-            }
-            else
-            {
-                int index = GetSelectionIndex(state.selectionGrid);
-                if (index >= 0 && index < currentPool.Count)
-                {
-                    pointer.gameObject.SetActive(true);
-                    RectTransform cardRect = cardImages[index].rectTransform;
-                    pointer.rectTransform.anchorMin = cardRect.anchorMin;
-                    pointer.rectTransform.anchorMax = cardRect.anchorMax;
-                    pointer.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-                    pointer.rectTransform.anchoredPosition =
-                        cardRect.anchoredPosition + new Vector2(0f, cardRect.sizeDelta.y * 0.5f + 18f);
-                }
-                else
-                {
-                    pointer.gameObject.SetActive(false);
-                }
-            }
-        }
-
-        LayoutPlayerStatuses(false);
-    }
-
-    void RefreshPlacementUi()
-    {
-        LayoutPlayerStatuses(true);
-    }
-
-    void LayoutPlayerStatuses(bool placementPhase)
-    {
-        if (GameManager.Instance == null)
-        {
-            return;
-        }
-
-        int index = 0;
-        foreach (PlayerController.ControlType player in GameManager.Instance.GetSessionPlayers())
-        {
-            TextMeshProUGUI status = playerStatusTexts[player];
-            status.gameObject.SetActive(true);
-            status.rectTransform.anchorMin = new Vector2(0.5f, 0f);
-            status.rectTransform.anchorMax = new Vector2(0.5f, 0f);
-            status.rectTransform.pivot = new Vector2(0.5f, 0f);
-            status.rectTransform.sizeDelta = new Vector2(340f, 44f);
-            status.rectTransform.anchoredPosition = new Vector2((index - 1) * 360f, 42f);
-            status.color = GetPlayerColor(player);
-
-            PlayerBuildState state = playerStates[player];
-            if (!placementPhase)
-            {
-                status.text = state.selected
-                    ? GetDisplayName(player) + ": " + currentPool[state.selectedEntryIndex].definition.displayName
-                    : GetDisplayName(player) + ": choosing...";
-            }
-            else
-            {
-                status.text = state.placed
-                    ? GetDisplayName(player) + ": placed"
-                    : GetDisplayName(player) + ": placing " +
-                      currentPool[state.selectedEntryIndex].definition.displayName;
-            }
-
-            index++;
-        }
-    }
-
-    Vector2Int GetSelectionMove(PlayerController.ControlType type)
-    {
-        switch (type)
-        {
-            case PlayerController.ControlType.WASD:
-                return GetMoveFromKeys(KeyCode.A, KeyCode.D, KeyCode.W, KeyCode.S);
-            case PlayerController.ControlType.IJKL:
-                return GetMoveFromKeys(KeyCode.J, KeyCode.L, KeyCode.I, KeyCode.K);
-            case PlayerController.ControlType.ArrowKeys:
-                return GetMoveFromKeys(KeyCode.LeftArrow, KeyCode.RightArrow, KeyCode.UpArrow, KeyCode.DownArrow);
-        }
-
-        return Vector2Int.zero;
+        return GameInput.GetSelectionMove(binding);
     }
 
     Vector2Int GetPlacementMove(PlayerBuildState state)
     {
-        Vector2Int move = Vector2Int.zero;
-        float now = Time.unscaledTime;
-
-        switch (state.controlType)
-        {
-            case PlayerController.ControlType.WASD:
-                move += GetRepeatedAxisMove(KeyCode.A, KeyCode.D, ref state.nextHorizontalRepeatTime, now, true);
-                move += GetRepeatedAxisMove(KeyCode.S, KeyCode.W, ref state.nextVerticalRepeatTime, now, false);
-                break;
-            case PlayerController.ControlType.IJKL:
-                move += GetRepeatedAxisMove(KeyCode.J, KeyCode.L, ref state.nextHorizontalRepeatTime, now, true);
-                move += GetRepeatedAxisMove(KeyCode.K, KeyCode.I, ref state.nextVerticalRepeatTime, now, false);
-                break;
-            case PlayerController.ControlType.ArrowKeys:
-                move += GetRepeatedAxisMove(KeyCode.LeftArrow, KeyCode.RightArrow, ref state.nextHorizontalRepeatTime, now, true);
-                move += GetRepeatedAxisMove(KeyCode.DownArrow, KeyCode.UpArrow, ref state.nextVerticalRepeatTime, now, false);
-                break;
-        }
-
-        return move;
+        return GameInput.GetPlacementMove(
+            state.binding,
+            ref state.nextHorizontalRepeatTime,
+            ref state.nextVerticalRepeatTime,
+            Time.unscaledTime,
+            inputRepeatDelay,
+            inputRepeatRate
+        );
     }
 
-    Vector2Int GetMoveFromKeys(KeyCode left, KeyCode right, KeyCode down, KeyCode up)
+    bool GetConfirmPressed(GameInput.BindingId binding)
     {
-        if (Input.GetKeyDown(left))
-        {
-            return Vector2Int.left;
-        }
-
-        if (Input.GetKeyDown(right))
-        {
-            return Vector2Int.right;
-        }
-
-        if (Input.GetKeyDown(up))
-        {
-            return Vector2Int.up;
-        }
-
-        if (Input.GetKeyDown(down))
-        {
-            return Vector2Int.down;
-        }
-
-        return Vector2Int.zero;
+        return GameInput.GetConfirmPressed(binding);
     }
 
-    Vector2Int GetRepeatedAxisMove(
-        KeyCode negative,
-        KeyCode positive,
-        ref float nextRepeatTime,
-        float now,
-        bool horizontal
-    )
+    bool GetRotatePressed(GameInput.BindingId binding)
     {
-        int direction = 0;
-
-        if (Input.GetKeyDown(negative))
-        {
-            direction = -1;
-            nextRepeatTime = now + inputRepeatDelay;
-        }
-        else if (Input.GetKeyDown(positive))
-        {
-            direction = 1;
-            nextRepeatTime = now + inputRepeatDelay;
-        }
-        else if (Input.GetKey(negative) && now >= nextRepeatTime)
-        {
-            direction = -1;
-            nextRepeatTime = now + inputRepeatRate;
-        }
-        else if (Input.GetKey(positive) && now >= nextRepeatTime)
-        {
-            direction = 1;
-            nextRepeatTime = now + inputRepeatRate;
-        }
-
-        if (direction == 0)
-        {
-            return Vector2Int.zero;
-        }
-
-        return horizontal ? new Vector2Int(direction, 0) : new Vector2Int(0, direction);
-    }
-
-    bool GetConfirmPressed(PlayerController.ControlType type)
-    {
-        switch (type)
-        {
-            case PlayerController.ControlType.WASD:
-                return Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.Space);
-            case PlayerController.ControlType.IJKL:
-                return Input.GetKeyDown(KeyCode.U);
-            case PlayerController.ControlType.ArrowKeys:
-                return Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
-        }
-
-        return false;
-    }
-
-    bool GetRotatePressed(PlayerController.ControlType type)
-    {
-        switch (type)
-        {
-            case PlayerController.ControlType.WASD:
-                return Input.GetKeyDown(KeyCode.Q);
-            case PlayerController.ControlType.IJKL:
-                return Input.GetKeyDown(KeyCode.O);
-            case PlayerController.ControlType.ArrowKeys:
-                return Input.GetKeyDown(KeyCode.RightShift);
-        }
-
-        return false;
+        return GameInput.GetRotatePressed(binding);
     }
 
     int GetNextPlacementRotation(BuildItemDefinition definition, int currentRotation)
@@ -2384,32 +1634,22 @@ public class BuildPhaseManager : MonoBehaviour
 
     string GetDisplayName(PlayerController.ControlType type)
     {
-        switch (type)
+        if (GameManager.Instance != null)
         {
-            case PlayerController.ControlType.WASD:
-                return "Green";
-            case PlayerController.ControlType.IJKL:
-                return "Blue";
-            case PlayerController.ControlType.ArrowKeys:
-                return "Yellow";
+            return GameManager.Instance.GetPlayerDisplayName(type);
         }
 
-        return type.ToString();
+        return GameManager.GetDefaultPlayerDisplayName(type);
     }
 
     Color GetPlayerColor(PlayerController.ControlType type)
     {
-        switch (type)
+        if (GameManager.Instance != null)
         {
-            case PlayerController.ControlType.WASD:
-                return new Color(0.36f, 0.9f, 0.42f);
-            case PlayerController.ControlType.IJKL:
-                return new Color(0.35f, 0.68f, 1f);
-            case PlayerController.ControlType.ArrowKeys:
-                return new Color(1f, 0.86f, 0.25f);
+            return GameManager.Instance.GetPlayerUiColor(type);
         }
 
-        return Color.white;
+        return GameManager.GetDefaultPlayerUiColor(type);
     }
 }
 

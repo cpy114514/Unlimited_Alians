@@ -23,7 +23,10 @@ public class ScoreboardUI : MonoBehaviour
     {
         PlayerController.ControlType.WASD,
         PlayerController.ControlType.IJKL,
-        PlayerController.ControlType.ArrowKeys
+        PlayerController.ControlType.ArrowKeys,
+        PlayerController.ControlType.Slot4,
+        PlayerController.ControlType.Slot5,
+        PlayerController.ControlType.Slot6
     };
 
     readonly Dictionary<PlayerController.ControlType, TextMeshProUGUI> labels =
@@ -57,26 +60,47 @@ public class ScoreboardUI : MonoBehaviour
 
     public void ShowRoundResults(PlayerController.ControlType? winner, bool matchWon)
     {
-        EnsureVisualsBuilt();
+        List<PlayerController.ControlType> highlightedPlayers =
+            new List<PlayerController.ControlType>();
 
-        if (panel != null)
+        if (winner.HasValue)
         {
-            panel.SetActive(true);
+            highlightedPlayers.Add(winner.Value);
         }
 
-        UpdateScores(winner, matchWon, false);
+        ShowResults(highlightedPlayers, GetRaceTitleText(winner, matchWon, false));
     }
 
     public void ShowNoWinnerResults()
     {
-        EnsureVisualsBuilt();
+        ShowResults(
+            new List<PlayerController.ControlType>(),
+            GetRaceTitleText(null, false, true)
+        );
+    }
 
-        if (panel != null)
+    public void ShowTagRoundResults(ICollection<PlayerController.ControlType> survivors)
+    {
+        List<PlayerController.ControlType> highlightedPlayers =
+            survivors != null
+                ? new List<PlayerController.ControlType>(survivors)
+                : new List<PlayerController.ControlType>();
+
+        string title;
+        if (highlightedPlayers.Count == 0)
         {
-            panel.SetActive(true);
+            title = "EVERYONE IS IT\nNO SURVIVORS";
+        }
+        else if (highlightedPlayers.Count == 1)
+        {
+            title = GetDisplayName(highlightedPlayers[0]) + " SURVIVES!";
+        }
+        else
+        {
+            title = "SURVIVORS WIN!";
         }
 
-        UpdateScores(null, false, true);
+        ShowTagResults(highlightedPlayers, title);
     }
 
     public void Hide()
@@ -95,15 +119,21 @@ public class ScoreboardUI : MonoBehaviour
 
     public void UpdateScores()
     {
-        UpdateScores(null, false, false);
+        ShowResults(new List<PlayerController.ControlType>(), "SCOREBOARD");
     }
 
-    void UpdateScores(
-        PlayerController.ControlType? winner,
-        bool matchWon,
-        bool noWinner
+    void ShowResults(
+        ICollection<PlayerController.ControlType> highlightedPlayers,
+        string title
     )
     {
+        EnsureVisualsBuilt();
+
+        if (panel != null)
+        {
+            panel.SetActive(true);
+        }
+
         if (panel == null || ScoreManager.Instance == null)
         {
             return;
@@ -117,7 +147,7 @@ public class ScoreboardUI : MonoBehaviour
             visiblePlayers.Add(PlayerController.ControlType.WASD);
         }
 
-        LayoutChart(visiblePlayers, winner, matchWon, noWinner);
+        LayoutChart(visiblePlayers, highlightedPlayers, title);
 
         if (animateRoutine != null)
         {
@@ -127,9 +157,36 @@ public class ScoreboardUI : MonoBehaviour
         animateRoutine = StartCoroutine(AnimateBars(visiblePlayers));
     }
 
+    void ShowTagResults(
+        ICollection<PlayerController.ControlType> survivors,
+        string title
+    )
+    {
+        EnsureVisualsBuilt();
+
+        if (panel != null)
+        {
+            panel.SetActive(true);
+        }
+
+        if (panel == null)
+        {
+            return;
+        }
+
+        List<PlayerController.ControlType> visiblePlayers = GetVisiblePlayers();
+        if (visiblePlayers.Count == 0)
+        {
+            visiblePlayers.Add(PlayerController.ControlType.WASD);
+        }
+
+        LayoutTagChart(visiblePlayers, survivors, title);
+    }
+
     void CacheLabels()
     {
         labels.Clear();
+        TextMeshProUGUI template = wasdText != null ? wasdText : (ijklText != null ? ijklText : arrowText);
 
         if (wasdText != null)
         {
@@ -145,6 +202,48 @@ public class ScoreboardUI : MonoBehaviour
         {
             labels[PlayerController.ControlType.ArrowKeys] = arrowText;
         }
+
+        if (template == null || panel == null)
+        {
+            return;
+        }
+
+        foreach (PlayerController.ControlType type in fallbackOrder)
+        {
+            if (labels.ContainsKey(type))
+            {
+                continue;
+            }
+
+            labels[type] = CreateRuntimeLabelTemplate(type, template);
+        }
+    }
+
+    TextMeshProUGUI CreateRuntimeLabelTemplate(
+        PlayerController.ControlType type,
+        TextMeshProUGUI template
+    )
+    {
+        GameObject labelObject = new GameObject(type + "Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(panel.transform, false);
+
+        TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
+        label.font = template.font;
+        label.fontSharedMaterial = template.fontSharedMaterial;
+        label.fontSize = template.fontSize;
+        label.alignment = template.alignment;
+        label.color = template.color;
+        label.text = string.Empty;
+
+        RectTransform templateRect = template.rectTransform;
+        RectTransform labelRect = label.rectTransform;
+        labelRect.anchorMin = templateRect.anchorMin;
+        labelRect.anchorMax = templateRect.anchorMax;
+        labelRect.pivot = templateRect.pivot;
+        labelRect.sizeDelta = templateRect.sizeDelta;
+        labelRect.anchoredPosition = templateRect.anchoredPosition;
+
+        return label;
     }
 
     void EnsureVisualsBuilt()
@@ -283,13 +382,17 @@ public class ScoreboardUI : MonoBehaviour
 
     void LayoutChart(
         List<PlayerController.ControlType> visiblePlayers,
-        PlayerController.ControlType? winner,
-        bool matchWon,
-        bool noWinner
+        ICollection<PlayerController.ControlType> highlightedPlayers,
+        string title
     )
     {
         HashSet<PlayerController.ControlType> visibleSet =
             new HashSet<PlayerController.ControlType>(visiblePlayers);
+
+        HashSet<PlayerController.ControlType> highlightedSet =
+            highlightedPlayers != null
+                ? new HashSet<PlayerController.ControlType>(highlightedPlayers)
+                : new HashSet<PlayerController.ControlType>();
 
         foreach (PlayerController.ControlType type in fallbackOrder)
         {
@@ -311,10 +414,10 @@ public class ScoreboardUI : MonoBehaviour
 
             int index = visiblePlayers.IndexOf(type);
             float yPosition = GetRowY(index, visiblePlayers.Count);
-            bool isWinner = winner.HasValue && winner.Value == type;
+            bool isHighlighted = highlightedSet.Contains(type);
 
             ConfigureLabel(labels[type], type, yPosition);
-            ConfigureBar(type, yPosition, isWinner);
+            ConfigureBar(type, yPosition, isHighlighted);
             ConfigureScoreText(type, yPosition);
         }
 
@@ -322,7 +425,7 @@ public class ScoreboardUI : MonoBehaviour
         {
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.fontSize = 42f;
-            titleText.text = GetTitleText(winner, matchWon, noWinner);
+            titleText.text = title;
         }
     }
 
@@ -423,7 +526,75 @@ public class ScoreboardUI : MonoBehaviour
         animateRoutine = null;
     }
 
-    string GetTitleText(
+    void LayoutTagChart(
+        List<PlayerController.ControlType> visiblePlayers,
+        ICollection<PlayerController.ControlType> survivors,
+        string title
+    )
+    {
+        if (animateRoutine != null)
+        {
+            StopCoroutine(animateRoutine);
+            animateRoutine = null;
+        }
+
+        HashSet<PlayerController.ControlType> visibleSet =
+            new HashSet<PlayerController.ControlType>(visiblePlayers);
+
+        HashSet<PlayerController.ControlType> survivorSet =
+            survivors != null
+                ? new HashSet<PlayerController.ControlType>(survivors)
+                : new HashSet<PlayerController.ControlType>();
+
+        foreach (PlayerController.ControlType type in fallbackOrder)
+        {
+            if (!labels.ContainsKey(type))
+            {
+                continue;
+            }
+
+            bool isVisible = visibleSet.Contains(type);
+            labels[type].gameObject.SetActive(isVisible);
+            barBackgrounds[type].gameObject.SetActive(isVisible);
+            scoreTexts[type].gameObject.SetActive(isVisible);
+
+            if (!isVisible)
+            {
+                continue;
+            }
+
+            int index = visiblePlayers.IndexOf(type);
+            float yPosition = GetRowY(index, visiblePlayers.Count);
+            bool survived = survivorSet.Contains(type);
+
+            ConfigureLabel(labels[type], type, yPosition);
+            ConfigureBar(type, yPosition, survived);
+            ConfigureScoreText(type, yPosition);
+
+            RectTransform fillRect = barFills[type];
+            float statusWidth = survived ? barWidth : barWidth * 0.34f;
+            fillRect.sizeDelta = new Vector2(statusWidth, fillRect.sizeDelta.y);
+            fillImages[type].color = survived
+                ? Color.Lerp(GetPlayerColor(type), Color.white, 0.18f)
+                : new Color(0.95f, 0.38f, 0.3f, 0.96f);
+            backgroundImages[type].color = survived
+                ? new Color(0.16f, 0.16f, 0.2f, 0.98f)
+                : new Color(0.14f, 0.08f, 0.08f, 0.96f);
+            scoreTexts[type].text = survived ? "SAFE" : "IT";
+            scoreTexts[type].color = survived
+                ? new Color(0.92f, 1f, 0.92f, 1f)
+                : new Color(1f, 0.82f, 0.8f, 1f);
+        }
+
+        if (titleText != null)
+        {
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.fontSize = 42f;
+            titleText.text = title;
+        }
+    }
+
+    string GetRaceTitleText(
         PlayerController.ControlType? winner,
         bool matchWon,
         bool noWinner
@@ -446,32 +617,22 @@ public class ScoreboardUI : MonoBehaviour
 
     string GetDisplayName(PlayerController.ControlType type)
     {
-        switch (type)
+        if (GameManager.Instance != null)
         {
-            case PlayerController.ControlType.WASD:
-                return "Green";
-            case PlayerController.ControlType.IJKL:
-                return "Blue";
-            case PlayerController.ControlType.ArrowKeys:
-                return "Yellow";
+            return GameManager.Instance.GetPlayerDisplayName(type);
         }
 
-        return type.ToString();
+        return GameManager.GetDefaultPlayerDisplayName(type);
     }
 
     Color GetPlayerColor(PlayerController.ControlType type)
     {
-        switch (type)
+        if (GameManager.Instance != null)
         {
-            case PlayerController.ControlType.WASD:
-                return new Color(1f, 0.78f, 0.2f);
-            case PlayerController.ControlType.IJKL:
-                return new Color(1f, 0.4f, 0.52f);
-            case PlayerController.ControlType.ArrowKeys:
-                return new Color(0.3f, 0.8f, 1f);
+            return GameManager.Instance.GetPlayerUiColor(type);
         }
 
-        return Color.white;
+        return GameManager.GetDefaultPlayerUiColor(type);
     }
 
     string FormatScore(float score)

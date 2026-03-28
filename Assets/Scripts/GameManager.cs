@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -12,12 +13,18 @@ public class GameManager : MonoBehaviour
     {
         PlayerController.ControlType.WASD,
         PlayerController.ControlType.IJKL,
-        PlayerController.ControlType.ArrowKeys
+        PlayerController.ControlType.ArrowKeys,
+        PlayerController.ControlType.Slot4,
+        PlayerController.ControlType.Slot5,
+        PlayerController.ControlType.Slot6
     };
 
-    public GameObject wasdPrefab;
-    public GameObject arrowPrefab;
-    public GameObject ijklPrefab;
+    [Header("Base Player")]
+    public PlayerRosterConfig sharedPlayerRosterConfig;
+    public GameObject playerPrefab;
+
+    [Header("Player Avatars")]
+    public List<PlayerAvatarDefinition> playerAvatars = new List<PlayerAvatarDefinition>();
 
     public Transform[] spawnPoints;
 
@@ -29,8 +36,13 @@ public class GameManager : MonoBehaviour
     readonly Dictionary<PlayerController.ControlType, PlayerController> playersByType =
         new Dictionary<PlayerController.ControlType, PlayerController>();
 
-    readonly List<PlayerController.ControlType> sessionPlayers =
-        new List<PlayerController.ControlType>();
+    readonly List<PlayerSessionManager.SessionPlayer> sessionPlayers =
+        new List<PlayerSessionManager.SessionPlayer>();
+
+    bool IsTagModeScene
+    {
+        get { return SceneManager.GetActiveScene().name == "Tag1"; }
+    }
 
     void Awake()
     {
@@ -42,7 +54,7 @@ public class GameManager : MonoBehaviour
 
         Instance = this;
 
-        if (GetComponent<BuildPhaseManager>() == null)
+        if (!IsTagModeScene && GetComponent<BuildPhaseManager>() == null)
         {
             gameObject.AddComponent<BuildPhaseManager>();
         }
@@ -52,11 +64,7 @@ public class GameManager : MonoBehaviour
     {
         InitializeSessionPlayers();
         SpawnMissingPlayersAtSpawns();
-
-        if (BuildPhaseManager.Instance != null)
-        {
-            BuildPhaseManager.Instance.BeginRoundSetup(false);
-        }
+        BeginSceneRound(false);
     }
 
     void OnDestroy()
@@ -71,30 +79,51 @@ public class GameManager : MonoBehaviour
     {
         sessionPlayers.Clear();
 
-        List<PlayerController.ControlType> requestedPlayers =
-            new List<PlayerController.ControlType>();
+        List<PlayerSessionManager.SessionPlayer> requestedPlayers =
+            new List<PlayerSessionManager.SessionPlayer>();
 
         if (PlayerSessionManager.Instance != null &&
-            PlayerSessionManager.Instance.activePlayers.Count > 0)
+            PlayerSessionManager.Instance.joinedPlayers.Count > 0)
         {
-            requestedPlayers.AddRange(PlayerSessionManager.Instance.activePlayers);
+            requestedPlayers.AddRange(PlayerSessionManager.Instance.GetSessionPlayersCopy());
+        }
+        else if (PlayerSessionManager.Instance != null &&
+                 PlayerSessionManager.Instance.activePlayers.Count > 0)
+        {
+            for (int i = 0; i < PlayerSessionManager.Instance.activePlayers.Count; i++)
+            {
+                PlayerController.ControlType slot = PlayerSessionManager.Instance.activePlayers[i];
+                requestedPlayers.Add(new PlayerSessionManager.SessionPlayer
+                {
+                    slot = slot,
+                    binding = GetLegacyBindingForSlot(slot),
+                    prefabIndex = Mathf.Clamp(i, 0, 5)
+                });
+            }
         }
         else
         {
-            requestedPlayers.Add(PlayerController.ControlType.WASD);
-            Debug.LogWarning("No active lobby session found. Defaulting to a single WASD player.");
+            requestedPlayers.Add(new PlayerSessionManager.SessionPlayer
+            {
+                slot = PlayerController.ControlType.WASD,
+                binding = GameInput.BindingId.KeyboardWasd,
+                prefabIndex = 0
+            });
+            Debug.LogWarning("No active lobby session found. Defaulting to a single keyboard player.");
         }
 
-        foreach (PlayerController.ControlType controlType in preferredPlayerOrder)
+        foreach (PlayerController.ControlType slot in preferredPlayerOrder)
         {
-            if (requestedPlayers.Contains(controlType))
+            PlayerSessionManager.SessionPlayer player = requestedPlayers.Find(entry => entry.slot == slot);
+            if (player != null)
             {
-                sessionPlayers.Add(controlType);
+                sessionPlayers.Add(player.Clone());
             }
         }
 
         if (sessionPlayers.Count > spawnPoints.Length)
         {
+            sessionPlayers.RemoveRange(spawnPoints.Length, sessionPlayers.Count - spawnPoints.Length);
             Debug.LogWarning("Not enough spawn points for all joined players.");
         }
     }
@@ -105,26 +134,29 @@ public class GameManager : MonoBehaviour
 
         for (int i = 0; i < playerCount; i++)
         {
-            PlayerController.ControlType controlType = sessionPlayers[i];
+            PlayerSessionManager.SessionPlayer session = sessionPlayers[i];
 
-            if (playersByType.TryGetValue(controlType, out PlayerController existingPlayer) &&
+            if (playersByType.TryGetValue(session.slot, out PlayerController existingPlayer) &&
                 existingPlayer != null)
             {
+                existingPlayer.inputBinding = session.binding;
+                existingPlayer.playerPrefabIndex = session.prefabIndex;
+                ApplyAvatarDefinition(existingPlayer, session.prefabIndex);
                 existingPlayer.ResetForNextRound(spawnPoints[i].position);
                 continue;
             }
 
-            SpawnPlayer(controlType, spawnPoints[i].position);
+            SpawnPlayer(session, spawnPoints[i].position);
         }
     }
 
-    PlayerController SpawnPlayer(PlayerController.ControlType type, Vector3 position)
+    PlayerController SpawnPlayer(PlayerSessionManager.SessionPlayer session, Vector3 position)
     {
-        GameObject prefab = GetPrefab(type);
+        GameObject prefab = GetPrefab(session.prefabIndex, session.slot);
 
         if (prefab == null)
         {
-            Debug.LogError("Missing prefab for " + type);
+            Debug.LogError("Missing player prefab for slot " + session.slot + " at index " + session.prefabIndex);
             return null;
         }
 
@@ -138,18 +170,21 @@ public class GameManager : MonoBehaviour
             return null;
         }
 
-        player.controlType = type;
+        player.controlType = session.slot;
+        player.inputBinding = session.binding;
+        player.playerPrefabIndex = session.prefabIndex;
+        ApplyAvatarDefinition(player, session.prefabIndex);
         player.ResetForNextRound(position);
-        playersByType[type] = player;
+        playersByType[session.slot] = player;
 
         return player;
     }
 
     public void SetAllPlayerControl(bool enabled)
     {
-        foreach (PlayerController.ControlType controlType in sessionPlayers)
+        foreach (PlayerSessionManager.SessionPlayer session in sessionPlayers)
         {
-            if (!playersByType.TryGetValue(controlType, out PlayerController player) || player == null)
+            if (!playersByType.TryGetValue(session.slot, out PlayerController player) || player == null)
             {
                 continue;
             }
@@ -163,26 +198,63 @@ public class GameManager : MonoBehaviour
         playersByType[player] = null;
     }
 
+    public bool RespawnPlayer(
+        PlayerController.ControlType type,
+        out PlayerController player
+    )
+    {
+        player = null;
+
+        PlayerSessionManager.SessionPlayer session = sessionPlayers.Find(entry => entry.slot == type);
+        if (session == null)
+        {
+            return false;
+        }
+
+        int spawnIndex = sessionPlayers.IndexOf(session);
+        if (spawnIndex < 0 || spawnIndex >= spawnPoints.Length || spawnPoints[spawnIndex] == null)
+        {
+            return false;
+        }
+
+        if (playersByType.TryGetValue(type, out PlayerController existingPlayer) &&
+            existingPlayer != null)
+        {
+            existingPlayer.inputBinding = session.binding;
+            existingPlayer.playerPrefabIndex = session.prefabIndex;
+            ApplyAvatarDefinition(existingPlayer, session.prefabIndex);
+            existingPlayer.ResetForNextRound(spawnPoints[spawnIndex].position);
+            player = existingPlayer;
+            return true;
+        }
+
+        player = SpawnPlayer(session, spawnPoints[spawnIndex].position);
+        return player != null;
+    }
+
     public int GetSessionPlayerCount()
     {
         return sessionPlayers.Count;
     }
 
-    public bool TryGetPlayer(
-        PlayerController.ControlType type,
-        out PlayerController player
-    )
+    public bool TryGetPlayer(PlayerController.ControlType type, out PlayerController player)
     {
         return playersByType.TryGetValue(type, out player) && player != null;
+    }
+
+    public bool TryGetSessionPlayer(PlayerController.ControlType type, out PlayerSessionManager.SessionPlayer session)
+    {
+        session = sessionPlayers.Find(entry => entry.slot == type);
+        return session != null;
     }
 
     public int GetAlivePlayerCount()
     {
         int alivePlayers = 0;
 
-        foreach (PlayerController.ControlType controlType in sessionPlayers)
+        foreach (PlayerSessionManager.SessionPlayer session in sessionPlayers)
         {
-            if (playersByType.TryGetValue(controlType, out PlayerController player) && player != null)
+            if (playersByType.TryGetValue(session.slot, out PlayerController player) && player != null)
             {
                 alivePlayers++;
             }
@@ -196,9 +268,42 @@ public class GameManager : MonoBehaviour
         SpawnMissingPlayersAtSpawns();
     }
 
+    public void BeginSceneRound(bool clearPlacedItems)
+    {
+        if (IsTagModeScene)
+        {
+            RoundManager.Instance?.BeginRacePhase();
+            return;
+        }
+
+        if (BuildPhaseManager.Instance != null)
+        {
+            BuildPhaseManager.Instance.BeginRoundSetup(clearPlacedItems);
+        }
+    }
+
     public List<PlayerController.ControlType> GetSessionPlayers()
     {
-        return new List<PlayerController.ControlType>(sessionPlayers);
+        List<PlayerController.ControlType> players = new List<PlayerController.ControlType>();
+
+        foreach (PlayerSessionManager.SessionPlayer session in sessionPlayers)
+        {
+            players.Add(session.slot);
+        }
+
+        return players;
+    }
+
+    public List<PlayerSessionManager.SessionPlayer> GetSessionPlayerInfos()
+    {
+        List<PlayerSessionManager.SessionPlayer> players = new List<PlayerSessionManager.SessionPlayer>();
+
+        foreach (PlayerSessionManager.SessionPlayer session in sessionPlayers)
+        {
+            players.Add(session.Clone());
+        }
+
+        return players;
     }
 
     public void GetBuildPlacementConfig(
@@ -210,6 +315,100 @@ public class GameManager : MonoBehaviour
         minPlacementCell = buildMinPlacementCell;
         maxPlacementCell = buildMaxPlacementCell;
         exclusionHalfExtents = buildExclusionHalfExtents;
+    }
+
+    public bool TryGetAvatarDefinitionForPlayer(
+        PlayerController.ControlType type,
+        out PlayerAvatarDefinition definition
+    )
+    {
+        definition = null;
+
+        PlayerSessionManager.SessionPlayer session = sessionPlayers.Find(entry => entry.slot == type);
+        if (session == null)
+        {
+            return false;
+        }
+
+        List<PlayerAvatarDefinition> avatars = sharedPlayerRosterConfig != null
+            ? sharedPlayerRosterConfig.playerAvatars
+            : playerAvatars;
+
+        if (avatars == null || session.prefabIndex < 0 || session.prefabIndex >= avatars.Count)
+        {
+            return false;
+        }
+
+        definition = avatars[session.prefabIndex];
+        return definition != null;
+    }
+
+    public Color GetPlayerUiColor(PlayerController.ControlType type)
+    {
+        if (TryGetAvatarDefinitionForPlayer(type, out PlayerAvatarDefinition definition))
+        {
+            Color configuredColor = definition.uiColor;
+            if (configuredColor.a > 0.01f)
+            {
+                return configuredColor;
+            }
+        }
+
+        return GetDefaultPlayerUiColor(type);
+    }
+
+    public string GetPlayerDisplayName(PlayerController.ControlType type)
+    {
+        if (TryGetAvatarDefinitionForPlayer(type, out PlayerAvatarDefinition definition) &&
+            definition != null &&
+            !string.IsNullOrWhiteSpace(definition.displayName))
+        {
+            return definition.displayName.Trim();
+        }
+
+        return GetDefaultPlayerDisplayName(type);
+    }
+
+    public static string GetDefaultPlayerDisplayName(PlayerController.ControlType type)
+    {
+        switch (type)
+        {
+            case PlayerController.ControlType.WASD:
+                return "Green";
+            case PlayerController.ControlType.IJKL:
+                return "Blue";
+            case PlayerController.ControlType.ArrowKeys:
+                return "Yellow";
+            case PlayerController.ControlType.Slot4:
+                return "Red";
+            case PlayerController.ControlType.Slot5:
+                return "Pink";
+            case PlayerController.ControlType.Slot6:
+                return "Purple";
+        }
+
+        return type.ToString();
+    }
+
+    public static Color GetDefaultPlayerUiColor(PlayerController.ControlType type)
+    {
+        switch (type)
+        {
+            case PlayerController.ControlType.WASD:
+                return new Color(0.36f, 0.9f, 0.42f);
+            case PlayerController.ControlType.IJKL:
+                return new Color(0.35f, 0.68f, 1f);
+            case PlayerController.ControlType.ArrowKeys:
+                return new Color(1f, 0.86f, 0.25f);
+            case PlayerController.ControlType.Slot4:
+                return new Color(1f, 0.42f, 0.35f);
+            case PlayerController.ControlType.Slot5:
+                return new Color(1f, 0.48f, 0.76f);
+            case PlayerController.ControlType.Slot6:
+                return new Color(0.72f, 0.46f, 1f);
+        }
+
+        return Color.white;
     }
 
     void OnDrawGizmosSelected()
@@ -247,10 +446,7 @@ public class GameManager : MonoBehaviour
 
 #if UNITY_EDITOR
         Handles.color = new Color(0.18f, 0.95f, 0.88f, 0.95f);
-        Handles.Label(
-            center + new Vector3(0f, size.y * 0.5f + 0.35f, 0f),
-            "Build Range"
-        );
+        Handles.Label(center + new Vector3(0f, size.y * 0.5f + 0.35f, 0f), "Build Range");
 #endif
     }
 
@@ -296,25 +492,66 @@ public class GameManager : MonoBehaviour
 
 #if UNITY_EDITOR
         Handles.color = new Color(1f, 0.42f, 0.24f, 0.95f);
-        Handles.Label(
-            center + new Vector3(0f, size.y * 0.5f + 0.18f, 0f),
-            label
-        );
+        Handles.Label(center + new Vector3(0f, size.y * 0.5f + 0.18f, 0f), label);
 #endif
     }
 
-    GameObject GetPrefab(PlayerController.ControlType type)
+    GameObject GetPrefab(int prefabIndex, PlayerController.ControlType slot)
     {
-        switch (type)
+        if (sharedPlayerRosterConfig != null && sharedPlayerRosterConfig.playerPrefab != null)
         {
-            case PlayerController.ControlType.WASD:
-                return wasdPrefab;
-            case PlayerController.ControlType.ArrowKeys:
-                return arrowPrefab;
-            case PlayerController.ControlType.IJKL:
-                return ijklPrefab;
+            return sharedPlayerRosterConfig.playerPrefab;
+        }
+
+        if (playerPrefab != null)
+        {
+            return playerPrefab;
         }
 
         return null;
+    }
+
+    void ApplyAvatarDefinition(PlayerController controller, int prefabIndex)
+    {
+        if (controller == null)
+        {
+            return;
+        }
+
+        List<PlayerAvatarDefinition> avatars = sharedPlayerRosterConfig != null
+            ? sharedPlayerRosterConfig.playerAvatars
+            : playerAvatars;
+
+        if (avatars == null ||
+            prefabIndex < 0 ||
+            prefabIndex >= avatars.Count)
+        {
+            return;
+        }
+
+        PlayerAvatarDefinition avatar = avatars[prefabIndex];
+        if (avatar == null)
+        {
+            return;
+        }
+
+        controller.ApplyAvatarAnimation(
+            avatar.idleSprite,
+            avatar.runSpriteA,
+            avatar.runSpriteB
+        );
+    }
+
+    GameInput.BindingId GetLegacyBindingForSlot(PlayerController.ControlType slot)
+    {
+        switch (slot)
+        {
+            case PlayerController.ControlType.IJKL:
+                return GameInput.BindingId.KeyboardIjkl;
+            case PlayerController.ControlType.ArrowKeys:
+                return GameInput.BindingId.KeyboardArrows;
+            default:
+                return GameInput.BindingId.KeyboardWasd;
+        }
     }
 }
