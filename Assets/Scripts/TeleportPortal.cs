@@ -27,12 +27,13 @@ public class TeleportPortal : MonoBehaviour
     public Vector2 glowOffset = new Vector2(0f, -0.12f);
     public float glowAnimationSpeed = 8f;
 
-    BoxCollider2D triggerCollider;
-    Transform doorTransform;
-    Transform glowTransform;
-    SpriteRenderer doorRenderer;
-    SpriteRenderer glowRenderer;
-    Sprite[] glowFrames;
+    [Header("Generated References")]
+    [SerializeField] BoxCollider2D triggerCollider;
+    [SerializeField] Transform doorTransform;
+    [SerializeField] Transform glowTransform;
+    [SerializeField] SpriteRenderer doorRenderer;
+    [SerializeField] SpriteRenderer glowRenderer;
+    [SerializeField] Sprite[] glowFrames;
     float nextPortalReadyTime;
 
     void Awake()
@@ -305,10 +306,16 @@ public class TeleportPortal : MonoBehaviour
 #if UNITY_EDITOR
         if (doorSprite == null)
         {
-            doorSprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Picture/portal_door.png");
+            doorSprite = LoadSpriteFromPaths(
+                "Assets/Picture/Gameplay/portal_door.png",
+                "Assets/Picture/portal_door.png"
+            );
         }
 
-        Object[] glowAssets = AssetDatabase.LoadAllAssetsAtPath("Assets/Picture/Portal.png");
+        Object[] glowAssets = LoadAllAssetsFromPaths(
+            "Assets/Picture/Gameplay/Portal.png",
+            "Assets/Picture/Portal.png"
+        );
         List<Sprite> loadedGlowFrames = new List<Sprite>();
 
         foreach (Object asset in glowAssets)
@@ -331,9 +338,42 @@ public class TeleportPortal : MonoBehaviour
             glowFrames = null;
             if (glowSprite == null)
             {
-                glowSprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Picture/Portal.png");
+                glowSprite = LoadSpriteFromPaths(
+                    "Assets/Picture/Gameplay/Portal.png",
+                    "Assets/Picture/Portal.png"
+                );
             }
         }
 #endif
     }
+
+#if UNITY_EDITOR
+    Sprite LoadSpriteFromPaths(params string[] candidatePaths)
+    {
+        for (int i = 0; i < candidatePaths.Length; i++)
+        {
+            Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(candidatePaths[i]);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+        }
+
+        return null;
+    }
+
+    Object[] LoadAllAssetsFromPaths(params string[] candidatePaths)
+    {
+        for (int i = 0; i < candidatePaths.Length; i++)
+        {
+            Object[] assets = AssetDatabase.LoadAllAssetsAtPath(candidatePaths[i]);
+            if (assets != null && assets.Length > 0)
+            {
+                return assets;
+            }
+        }
+
+        return System.Array.Empty<Object>();
+    }
+#endif
 }

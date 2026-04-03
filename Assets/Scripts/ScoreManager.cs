@@ -40,6 +40,12 @@ public class ScoreManager : MonoBehaviour
         scores[player] += amount;
     }
 
+    public void SetScore(PlayerController.ControlType player, float amount)
+    {
+        EnsureScores();
+        scores[player] = amount;
+    }
+
     public float GetScore(PlayerController.ControlType player)
     {
         EnsureScores();
@@ -51,11 +57,27 @@ public class ScoreManager : MonoBehaviour
         out PlayerController.ControlType winner
     )
     {
+        winner = default;
+
+        if (!TryGetMatchLeaders(priorityOrder, out List<PlayerController.ControlType> leaders, out _))
+        {
+            return false;
+        }
+
+        winner = leaders[0];
+        return true;
+    }
+
+    public bool TryGetMatchLeaders(
+        IEnumerable<PlayerController.ControlType> priorityOrder,
+        out List<PlayerController.ControlType> leaders,
+        out float bestScore
+    )
+    {
         EnsureScores();
 
-        bool foundWinner = false;
-        float bestScore = WinningScore;
-        winner = default;
+        leaders = new List<PlayerController.ControlType>();
+        bestScore = WinningScore;
 
         foreach (PlayerController.ControlType type in EnumeratePriorityOrder(priorityOrder))
         {
@@ -66,15 +88,21 @@ public class ScoreManager : MonoBehaviour
                 continue;
             }
 
-            if (!foundWinner || score > bestScore + 0.0001f)
+            if (leaders.Count == 0 || score > bestScore + 0.0001f)
             {
+                leaders.Clear();
+                leaders.Add(type);
                 bestScore = score;
-                winner = type;
-                foundWinner = true;
+                continue;
+            }
+
+            if (Mathf.Abs(score - bestScore) <= 0.0001f)
+            {
+                leaders.Add(type);
             }
         }
 
-        return foundWinner;
+        return leaders.Count > 0;
     }
 
     public static void ResetScores()

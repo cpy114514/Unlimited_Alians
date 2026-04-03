@@ -403,6 +403,8 @@ MonoBehaviour:
   shellKickNudge: 0.18
   shellKickIgnoreTime: 0.12
   playerInteractionCooldown: 0.08
+  beetleInteractionCooldown: 0.1
+  shellImpactSeparation: 0.08
   groundMask:
     serializedVersion: 2
     m_Bits: 0
@@ -431,6 +433,15 @@ MonoBehaviour:
   jumpBlockProbeLow: {fileID: 5528078435006525051}
   jumpBlockProbeHigh: {fileID: 7895450333695066496}
   landingProbe: {fileID: 393263250393323960}
+  rb: {fileID: 4312875432167800104}
+  bodyCollider: {fileID: 4312875432167800105}
+  spriteRenderer: {fileID: 4312875432167800103}
+  backHitbox: {fileID: 229418279450095973}
+  hurtHitbox: {fileID: 7955773499883272811}
+  shellKickLeftHitbox: {fileID: 1725631523740195091}
+  shellKickRightHitbox: {fileID: 1276796168643298541}
+  shellTopKickHitbox: {fileID: 1513591793697440470}
+  noFrictionMaterial: {fileID: 0}
 --- !u!1 &4349036076373809560
 GameObject:
   m_ObjectHideFlags: 0
@@ -603,7 +614,7 @@ BoxCollider2D:
   m_IsTrigger: 1
   m_UsedByEffector: 0
   m_UsedByComposite: 0
-  m_Offset: {x: 0.00029945374, y: 0.2417156}
+  m_Offset: {x: 0.001830563, y: 0.2417156}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -614,7 +625,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 0.7201842, y: 0.18524602}
+  m_Size: {x: 0.82735574, y: 0.18524602}
   m_EdgeRadius: 0
 --- !u!1 &6990408264037622313
 GameObject:
@@ -757,7 +768,7 @@ BoxCollider2D:
   m_IsTrigger: 1
   m_UsedByEffector: 0
   m_UsedByComposite: 0
-  m_Offset: {x: -0.0035163462, y: -0.08672419}
+  m_Offset: {x: -0.0035163462, y: -0.09284829}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -768,7 +779,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 0.8007894, y: 0.6028494}
+  m_Size: {x: 0.8007894, y: 0.5906012}
   m_EdgeRadius: 0
 --- !u!1 &8015441229877203876
 GameObject:

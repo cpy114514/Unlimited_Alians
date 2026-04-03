@@ -8,6 +8,7 @@ public class TagEndOverlayUI : MonoBehaviour
 {
     const float FadeDuration = 0.45f;
     const float PromptDelay = 0.2f;
+    const float KenneyFontScale = 1.2f;
 
     Canvas canvas;
     GameObject root;
@@ -153,7 +154,7 @@ public class TagEndOverlayUI : MonoBehaviour
         TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
         text.font = TMP_Settings.defaultFontAsset;
         text.alignment = TextAlignmentOptions.Center;
-        text.fontSize = fontSize;
+        text.fontSize = fontSize * KenneyFontScale;
         text.color = color;
         text.fontStyle = style;
 

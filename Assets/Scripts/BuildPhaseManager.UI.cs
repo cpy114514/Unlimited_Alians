@@ -6,6 +6,8 @@ using System;
 
 public partial class BuildPhaseManager
 {
+    const float KenneyFontScale = 1.2f;
+
     void EnsureUi()
     {
         if (canvas == null)
@@ -259,7 +261,7 @@ public partial class BuildPhaseManager
     {
         RectTransform rect = CreateUiObject(name, parent);
         TextMeshProUGUI text = rect.gameObject.AddComponent<TextMeshProUGUI>();
-        text.fontSize = fontSize;
+        text.fontSize = fontSize * KenneyFontScale;
         text.alignment = alignment;
         text.color = Color.white;
         text.font = TMP_Settings.defaultFontAsset;
@@ -369,8 +371,20 @@ public partial class BuildPhaseManager
         for (int i = 0; i < previewCells.Length && i < cellPreviews.Count; i++)
         {
             Image cellImage = cellPreviews[i];
-            cellImage.sprite = blockSprite != null ? blockSprite : squareSprite;
+            bool isLadderTop = definition.isLadder && previewCells[i].y == maxY;
+            if (definition.isLadder)
+            {
+                cellImage.sprite = isLadderTop
+                    ? GetLadderPreviewTopSprite()
+                    : (ladderBodySprite != null ? ladderBodySprite : (blockSprite != null ? blockSprite : squareSprite));
+            }
+            else
+            {
+                cellImage.sprite = blockSprite != null ? blockSprite : squareSprite;
+            }
+
             cellImage.color = Color.white;
+            cellImage.preserveAspect = true;
             RectTransform rect = cellImage.rectTransform;
             rect.anchorMin = new Vector2(0f, 0f);
             rect.anchorMax = new Vector2(0f, 0f);

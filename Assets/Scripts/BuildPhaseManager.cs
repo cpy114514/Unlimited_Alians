@@ -24,6 +24,9 @@ public partial class BuildPhaseManager : MonoBehaviour
         Trampoline,
         Launcher,
         Portal,
+        Ladder2,
+        Ladder3,
+        Ladder4,
         Block1x1,
         Block1x2,
         Block1x3,
@@ -47,6 +50,8 @@ public partial class BuildPhaseManager : MonoBehaviour
         public bool isTrampoline;
         public bool isLauncher;
         public bool isPortal;
+        public bool isLadder;
+        public int ladderHeight;
     }
 
     class PoolEntry
@@ -134,7 +139,12 @@ public partial class BuildPhaseManager : MonoBehaviour
     GameObject launcherPrefabAsset;
     TeleportPortal portalTemplate;
     GameObject portalPrefabAsset;
+    GameObject ladder2PrefabAsset;
+    GameObject ladder3PrefabAsset;
+    GameObject ladder4PrefabAsset;
     Sprite portalDoorSprite;
+    Sprite ladderBodySprite;
+    Sprite[] ladderTopSprites;
     BuildItemDefinition defaultPlacementDefinition;
     GameObject placementGridRoot;
     Material placementGridMaterial;
@@ -173,10 +183,12 @@ public partial class BuildPhaseManager : MonoBehaviour
         {
             BuildCatalog();
         }
-
-        CacheTemplates();
-        EnsureUi();
-        ShowEditorPreview();
+        
+        inputRepeatDelay = Mathf.Max(0.01f, inputRepeatDelay);
+        inputRepeatRate = Mathf.Max(0.01f, inputRepeatRate);
+        previewAlpha = Mathf.Clamp01(previewAlpha);
+        blockCategoryWeight = Mathf.Max(0, blockCategoryWeight);
+        specialCategoryWeight = Mathf.Max(0, specialCategoryWeight);
     }
 #endif
 
@@ -274,6 +286,9 @@ public partial class BuildPhaseManager : MonoBehaviour
         AddCatalogItem(BuildItemKind.Trampoline, "Trampoline", false, true, new[] { new Vector2Int(0, 0) });
         AddCatalogItem(BuildItemKind.Launcher, "Launcher", false, false, new[] { new Vector2Int(0, 0) }, true);
         AddCatalogItem(BuildItemKind.Portal, "Portal", false, false, new[] { new Vector2Int(0, 0) }, false, true);
+        AddLadder(BuildItemKind.Ladder2, "Ladder 2", 2);
+        AddLadder(BuildItemKind.Ladder3, "Ladder 3", 3);
+        AddLadder(BuildItemKind.Ladder4, "Ladder 4", 4);
         AddRectangle(BuildItemKind.Block1x1, "Block 1x1", 1, 1);
         AddRectangle(BuildItemKind.Block1x2, "Block 1x2", 1, 2);
         AddRectangle(BuildItemKind.Block1x3, "Block 1x3", 1, 3);
@@ -341,6 +356,17 @@ public partial class BuildPhaseManager : MonoBehaviour
         AddCatalogItem(kind, name, false, false, cells.ToArray());
     }
 
+    void AddLadder(BuildItemKind kind, string name, int height)
+    {
+        List<Vector2Int> cells = new List<Vector2Int>();
+        for (int y = 0; y < height; y++)
+        {
+            cells.Add(new Vector2Int(0, y));
+        }
+
+        AddCatalogItem(kind, name, false, false, cells.ToArray(), false, false, true, height);
+    }
+
     void AddCatalogItem(
         BuildItemKind kind,
         string name,
@@ -348,7 +374,9 @@ public partial class BuildPhaseManager : MonoBehaviour
         bool isTrampoline,
         Vector2Int[] cells,
         bool isLauncher = false,
-        bool isPortal = false
+        bool isPortal = false,
+        bool isLadder = false,
+        int ladderHeight = 0
     )
     {
         BuildItemDefinition definition = new BuildItemDefinition
@@ -359,6 +387,8 @@ public partial class BuildPhaseManager : MonoBehaviour
             isTrampoline = isTrampoline,
             isLauncher = isLauncher,
             isPortal = isPortal,
+            isLadder = isLadder,
+            ladderHeight = ladderHeight,
             cells = cells
         };
 
@@ -373,7 +403,9 @@ public partial class BuildPhaseManager : MonoBehaviour
             blockCatalog.Add(definition);
         }
 
-        if (!definition.isCoin && !definition.isTrampoline && defaultPlacementDefinition == null)
+        if (!IsSpecialDefinition(definition) &&
+            !definition.isLadder &&
+            defaultPlacementDefinition == null)
         {
             defaultPlacementDefinition = definition;
         }
@@ -468,6 +500,35 @@ public partial class BuildPhaseManager : MonoBehaviour
             portalDoorSprite = TryLoadPortalDoorSprite();
         }
 
+        if (ladderBodySprite == null)
+        {
+            ladderBodySprite = TryLoadLegacyTileSprite(70);
+        }
+
+        if (ladderTopSprites == null || ladderTopSprites.Length == 0)
+        {
+            List<Sprite> tops = new List<Sprite>();
+            TryAddLadderTopSprite(tops, 51);
+            TryAddLadderTopSprite(tops, 105);
+            TryAddLadderTopSprite(tops, 106);
+            ladderTopSprites = tops.ToArray();
+        }
+
+        if (ladder2PrefabAsset == null)
+        {
+            ladder2PrefabAsset = TryLoadLadderPrefab(2);
+        }
+
+        if (ladder3PrefabAsset == null)
+        {
+            ladder3PrefabAsset = TryLoadLadderPrefab(3);
+        }
+
+        if (ladder4PrefabAsset == null)
+        {
+            ladder4PrefabAsset = TryLoadLadderPrefab(4);
+        }
+
         if (coinTemplate == null)
         {
             coinTemplate = FindObjectOfType<CoinPickup>(true);
@@ -539,15 +600,20 @@ public partial class BuildPhaseManager : MonoBehaviour
             ? GameManager.Instance.GetSessionPlayers().Count
             : playerStates.Count;
         int poolCount = activePlayerCount <= 3 ? 6 : 9;
+        List<BuildItemDefinition> blockBag = CreateShuffledBag(blockCatalog);
+        List<BuildItemDefinition> specialBag = CreateShuffledBag(specialCatalog);
 
         for (int i = 0; i < poolCount; i++)
         {
-            BuildItemDefinition definition = PickRandomPoolDefinition();
+            BuildItemDefinition definition = PickRandomPoolDefinition(blockBag, specialBag);
             currentPool.Add(new PoolEntry { definition = definition });
         }
     }
 
-    BuildItemDefinition PickRandomPoolDefinition()
+    BuildItemDefinition PickRandomPoolDefinition(
+        List<BuildItemDefinition> blockBag,
+        List<BuildItemDefinition> specialBag
+    )
     {
         if (blockCatalog.Count == 0 && specialCatalog.Count == 0)
         {
@@ -556,12 +622,12 @@ public partial class BuildPhaseManager : MonoBehaviour
 
         if (blockCatalog.Count == 0)
         {
-            return specialCatalog[Random.Range(0, specialCatalog.Count)];
+            return DrawFromBag(specialBag, specialCatalog);
         }
 
         if (specialCatalog.Count == 0)
         {
-            return blockCatalog[Random.Range(0, blockCatalog.Count)];
+            return DrawFromBag(blockBag, blockCatalog);
         }
 
         int safeBlockWeight = Mathf.Max(0, blockCategoryWeight);
@@ -574,8 +640,66 @@ public partial class BuildPhaseManager : MonoBehaviour
         }
 
         bool pickBlockCategory = Random.Range(0, totalWeight) < safeBlockWeight;
-        List<BuildItemDefinition> category = pickBlockCategory ? blockCatalog : specialCatalog;
-        return category[Random.Range(0, category.Count)];
+        return pickBlockCategory
+            ? DrawFromBag(blockBag, blockCatalog)
+            : DrawFromBag(specialBag, specialCatalog);
+    }
+
+    List<BuildItemDefinition> CreateShuffledBag(List<BuildItemDefinition> source)
+    {
+        List<BuildItemDefinition> bag = new List<BuildItemDefinition>();
+
+        if (source == null)
+        {
+            return bag;
+        }
+
+        bag.AddRange(source);
+        ShuffleBuildDefinitions(bag);
+        return bag;
+    }
+
+    BuildItemDefinition DrawFromBag(
+        List<BuildItemDefinition> bag,
+        List<BuildItemDefinition> source
+    )
+    {
+        if ((bag == null || bag.Count == 0) && source != null && source.Count > 0)
+        {
+            if (bag == null)
+            {
+                bag = new List<BuildItemDefinition>();
+            }
+
+            bag.Clear();
+            bag.AddRange(source);
+            ShuffleBuildDefinitions(bag);
+        }
+
+        if (bag == null || bag.Count == 0)
+        {
+            return null;
+        }
+
+        BuildItemDefinition definition = bag[0];
+        bag.RemoveAt(0);
+        return definition;
+    }
+
+    void ShuffleBuildDefinitions(List<BuildItemDefinition> definitions)
+    {
+        if (definitions == null)
+        {
+            return;
+        }
+
+        for (int i = definitions.Count - 1; i > 0; i--)
+        {
+            int swapIndex = Random.Range(0, i + 1);
+            BuildItemDefinition temp = definitions[i];
+            definitions[i] = definitions[swapIndex];
+            definitions[swapIndex] = temp;
+        }
     }
 
     void UpdateSelection()
@@ -772,6 +896,11 @@ public partial class BuildPhaseManager : MonoBehaviour
             return 0;
         }
 
+        if (definition != null && definition.isLadder)
+        {
+            return 0;
+        }
+
         return (currentRotation + 1) % 4;
     }
 
@@ -858,6 +987,35 @@ public partial class BuildPhaseManager : MonoBehaviour
             SpriteRenderer renderer = child.GetComponent<SpriteRenderer>();
             renderer.sprite = portalDoorSprite != null ? portalDoorSprite : renderer.sprite;
             renderer.color = valid ? Color.white : new Color(1f, 0.45f, 0.45f, 0.95f);
+        }
+        else if (entry.definition.isLadder)
+        {
+            for (int i = 0; i < cells.Length; i++)
+            {
+                Vector2Int cell = cells[i];
+                GameObject child = CreatePreviewCell(root.transform, cell, state.controlType, valid);
+                child.transform.rotation = Quaternion.identity;
+
+                SpriteRenderer renderer = child.GetComponent<SpriteRenderer>();
+                bool isTopSegment = i == cells.Length - 1;
+                renderer.sprite = isTopSegment
+                    ? GetLadderPreviewTopSprite()
+                    : ladderBodySprite;
+                renderer.color = valid
+                    ? Color.white
+                    : new Color(1f, 0.45f, 0.45f, 0.95f);
+                if (isTopSegment)
+                {
+                    renderer.transform.localPosition += new Vector3(0f, Ladder.DefaultTopSegmentLocalYOffset, 0f);
+                }
+                renderer.transform.localScale = Ladder.CalculateSegmentScale(
+                    ladderBodySprite,
+                    renderer.sprite,
+                    isTopSegment,
+                    true,
+                    true
+                );
+            }
         }
         else
         {
@@ -1074,6 +1232,7 @@ public partial class BuildPhaseManager : MonoBehaviour
                 collider.GetComponentInParent<KeyPickup>() != null ||
                 collider.GetComponentInParent<LockedChest>() != null ||
                 collider.GetComponentInParent<TeleportPortal>() != null ||
+                collider.GetComponentInParent<Ladder>() != null ||
                 collider.GetComponentInParent<Trampoline>() != null ||
                 collider.GetComponentInParent<KillBlock>() != null)
             {
@@ -1137,6 +1296,10 @@ public partial class BuildPhaseManager : MonoBehaviour
         else if (definition.isPortal)
         {
             placedObject = PlaceTeleportPortal(cells[0]);
+        }
+        else if (definition.isLadder)
+        {
+            placedObject = PlaceLadder(definition, cells);
         }
         else
         {
@@ -1287,6 +1450,46 @@ public partial class BuildPhaseManager : MonoBehaviour
         }
 
         return null;
+    }
+
+    GameObject PlaceLadder(BuildItemDefinition definition, Vector2Int[] cells)
+    {
+        if (definition == null || cells == null || cells.Length == 0)
+        {
+            return null;
+        }
+
+        int minY = int.MaxValue;
+        int anchorX = cells[0].x;
+        for (int i = 0; i < cells.Length; i++)
+        {
+            minY = Mathf.Min(minY, cells[i].y);
+            anchorX = cells[i].x;
+        }
+
+        int ladderHeight = Mathf.Max(2, definition.ladderHeight > 0 ? definition.ladderHeight : cells.Length);
+        GameObject ladderPrefabAsset = GetLadderPrefabForHeight(ladderHeight);
+
+        GameObject ladderObject = ladderPrefabAsset != null
+            ? Instantiate(ladderPrefabAsset)
+            : new GameObject("Placed" + definition.displayName.Replace(" ", string.Empty));
+
+        ladderObject.name = "Placed" + definition.displayName.Replace(" ", string.Empty);
+        ladderObject.transform.position = CellToWorld(new Vector2Int(anchorX, minY));
+
+        Ladder ladder = ladderObject.GetComponent<Ladder>();
+        if (ladder == null)
+        {
+            ladder = ladderObject.AddComponent<Ladder>();
+        }
+
+        ladder.Configure(
+            ladderHeight,
+            ladderBodySprite,
+            ladderTopSprites
+        );
+
+        return ladderObject;
     }
 
     bool IsLauncherFacingRight(int rotation)
@@ -1653,6 +1856,74 @@ public partial class BuildPhaseManager : MonoBehaviour
         return null;
     }
 
+    void TryAddLadderTopSprite(List<Sprite> targets, int tileIndex)
+    {
+        if (targets == null)
+        {
+            return;
+        }
+
+        Sprite sprite = TryLoadLegacyTileSprite(tileIndex);
+        if (sprite != null)
+        {
+            targets.Add(sprite);
+        }
+    }
+
+    Sprite GetLadderPreviewTopSprite()
+    {
+        if (ladderTopSprites != null && ladderTopSprites.Length > 0)
+        {
+            return ladderTopSprites[0];
+        }
+
+        return ladderBodySprite != null ? ladderBodySprite : squareSprite;
+    }
+
+    Sprite TryLoadLegacyTileSprite(int tileIndex)
+    {
+#if UNITY_EDITOR
+        Tile tile = LoadEditorLegacyTile(tileIndex);
+        if (tile != null && tile.sprite != null)
+        {
+            return tile.sprite;
+        }
+#endif
+        return null;
+    }
+
+#if UNITY_EDITOR
+    static Tile LoadEditorLegacyTile(int tileIndex)
+    {
+        string currentPath = "Assets/Picture/Tiles/Legacy/tilemap_" + tileIndex + ".asset";
+        Tile tile = AssetDatabase.LoadAssetAtPath<Tile>(currentPath);
+        if (tile != null)
+        {
+            return tile;
+        }
+
+        string oldPath = "Assets/Picture/tilemap_" + tileIndex + ".asset";
+        tile = AssetDatabase.LoadAssetAtPath<Tile>(oldPath);
+        if (tile != null)
+        {
+            return tile;
+        }
+
+        string[] guids = AssetDatabase.FindAssets("tilemap_" + tileIndex + " t:Tile");
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string assetPath = AssetDatabase.GUIDToAssetPath(guids[i]);
+            tile = AssetDatabase.LoadAssetAtPath<Tile>(assetPath);
+            if (tile != null)
+            {
+                return tile;
+            }
+        }
+
+        return null;
+    }
+#endif
+
     TileBase TryLoadBlockTile47()
     {
 #if UNITY_EDITOR
@@ -1765,10 +2036,61 @@ public partial class BuildPhaseManager : MonoBehaviour
 #endif
     }
 
+    GameObject GetLadderPrefabForHeight(int ladderHeight)
+    {
+        switch (Mathf.Clamp(ladderHeight, 2, 4))
+        {
+            case 2:
+                if (ladder2PrefabAsset == null)
+                {
+                    ladder2PrefabAsset = TryLoadLadderPrefab(2);
+                }
+                return ladder2PrefabAsset;
+            case 3:
+                if (ladder3PrefabAsset == null)
+                {
+                    ladder3PrefabAsset = TryLoadLadderPrefab(3);
+                }
+                return ladder3PrefabAsset;
+            case 4:
+                if (ladder4PrefabAsset == null)
+                {
+                    ladder4PrefabAsset = TryLoadLadderPrefab(4);
+                }
+                return ladder4PrefabAsset;
+            default:
+                return null;
+        }
+    }
+
+    GameObject TryLoadLadderPrefab(int ladderHeight)
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefab/Ladder" + Mathf.Clamp(ladderHeight, 2, 4) + ".prefab");
+#else
+        return null;
+#endif
+    }
+
     Sprite TryLoadPortalDoorSprite()
     {
 #if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Picture/portal_door.png");
+        string[] candidatePaths =
+        {
+            "Assets/Picture/Gameplay/portal_door.png",
+            "Assets/Picture/portal_door.png"
+        };
+
+        for (int i = 0; i < candidatePaths.Length; i++)
+        {
+            Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(candidatePaths[i]);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+        }
+
+        return null;
 #else
         return null;
 #endif

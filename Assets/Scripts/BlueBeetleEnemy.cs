@@ -9,6 +9,8 @@ using UnityEditor;
 [RequireComponent(typeof(SpriteRenderer))]
 public partial class BlueBeetleEnemy : MonoBehaviour
 {
+    static readonly List<BlueBeetleEnemy> activeBeetles = new List<BlueBeetleEnemy>();
+
     struct LandingOption
     {
         public bool valid;
@@ -65,6 +67,8 @@ public partial class BlueBeetleEnemy : MonoBehaviour
     public float shellKickNudge = 0.18f;
     public float shellKickIgnoreTime = 0.12f;
     public float playerInteractionCooldown = 0.08f;
+    public float beetleInteractionCooldown = 0.1f;
+    public float shellImpactSeparation = 0.08f;
 
     [Header("Colliders")]
     public LayerMask groundMask;
@@ -96,15 +100,16 @@ public partial class BlueBeetleEnemy : MonoBehaviour
     public Transform jumpBlockProbeHigh;
     public Transform landingProbe;
 
-    Rigidbody2D rb;
-    BoxCollider2D bodyCollider;
-    SpriteRenderer spriteRenderer;
-    BoxCollider2D backHitbox;
-    BoxCollider2D hurtHitbox;
-    BoxCollider2D shellKickLeftHitbox;
-    BoxCollider2D shellKickRightHitbox;
-    BoxCollider2D shellTopKickHitbox;
-    PhysicsMaterial2D noFrictionMaterial;
+    [Header("Generated References")]
+    [SerializeField] Rigidbody2D rb;
+    [SerializeField] BoxCollider2D bodyCollider;
+    [SerializeField] SpriteRenderer spriteRenderer;
+    [SerializeField] BoxCollider2D backHitbox;
+    [SerializeField] BoxCollider2D hurtHitbox;
+    [SerializeField] BoxCollider2D shellKickLeftHitbox;
+    [SerializeField] BoxCollider2D shellKickRightHitbox;
+    [SerializeField] BoxCollider2D shellTopKickHitbox;
+    [SerializeField] PhysicsMaterial2D noFrictionMaterial;
 
     Vector3 spawnPosition;
     Quaternion spawnRotation;
@@ -117,6 +122,8 @@ public partial class BlueBeetleEnemy : MonoBehaviour
 
     readonly Dictionary<int, float> interactionCooldownUntil =
         new Dictionary<int, float>();
+    readonly Dictionary<int, float> beetleInteractionCooldownUntil =
+        new Dictionary<int, float>();
     readonly Collider2D[] overlapBuffer = new Collider2D[16];
 
     void Awake()
@@ -125,6 +132,19 @@ public partial class BlueBeetleEnemy : MonoBehaviour
         LoadDefaultSpritesIfNeeded();
         RecordSpawnState();
         ApplySprite(0f);
+    }
+
+    void OnEnable()
+    {
+        CacheComponents();
+        LoadDefaultSpritesIfNeeded();
+        RegisterActiveBeetle();
+        ApplySprite(animationTimer);
+    }
+
+    void OnDisable()
+    {
+        UnregisterActiveBeetle();
     }
 
     void OnValidate()
@@ -167,6 +187,7 @@ public partial class BlueBeetleEnemy : MonoBehaviour
 
         wasRaceActive = true;
         SetPhysicsActive(true);
+        RefreshBeetleCollisionRules();
 
         if (state == BeetleState.Walking)
         {
@@ -182,6 +203,7 @@ public partial class BlueBeetleEnemy : MonoBehaviour
         }
 
         ProcessPlayerInteractions();
+        ProcessBeetleInteractions();
     }
 
     void CacheComponents()
@@ -515,10 +537,77 @@ public partial class BlueBeetleEnemy : MonoBehaviour
         }
 
         interactionCooldownUntil.Clear();
+        beetleInteractionCooldownUntil.Clear();
         ApplyColliderForState();
         UpdateHitboxes();
         ApplySprite(0f);
         SetPhysicsActive(IsRaceActive());
+        RefreshAllBeetleCollisionRules();
+    }
+
+    void RegisterActiveBeetle()
+    {
+        if (!activeBeetles.Contains(this))
+        {
+            activeBeetles.Add(this);
+        }
+
+        RefreshAllBeetleCollisionRules();
+    }
+
+    void UnregisterActiveBeetle()
+    {
+        activeBeetles.Remove(this);
+
+        if (bodyCollider != null)
+        {
+            for (int i = 0; i < activeBeetles.Count; i++)
+            {
+                BlueBeetleEnemy other = activeBeetles[i];
+                if (other == null || other.bodyCollider == null)
+                {
+                    continue;
+                }
+
+                Physics2D.IgnoreCollision(bodyCollider, other.bodyCollider, false);
+            }
+        }
+
+        RefreshAllBeetleCollisionRules();
+    }
+
+    void RefreshBeetleCollisionRules()
+    {
+        if (bodyCollider == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < activeBeetles.Count; i++)
+        {
+            BlueBeetleEnemy other = activeBeetles[i];
+            if (other == null || other == this || other.bodyCollider == null)
+            {
+                continue;
+            }
+
+            bool shouldCollide = state != BeetleState.Walking || other.state != BeetleState.Walking;
+            Physics2D.IgnoreCollision(bodyCollider, other.bodyCollider, !shouldCollide);
+        }
+    }
+
+    void RefreshAllBeetleCollisionRules()
+    {
+        for (int i = 0; i < activeBeetles.Count; i++)
+        {
+            BlueBeetleEnemy beetle = activeBeetles[i];
+            if (beetle == null)
+            {
+                continue;
+            }
+
+            beetle.RefreshBeetleCollisionRules();
+        }
     }
 
     void OnDrawGizmosSelected()

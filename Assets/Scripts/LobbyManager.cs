@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class LobbyManager : MonoBehaviour
 {
@@ -34,6 +35,11 @@ public class LobbyManager : MonoBehaviour
 
     void Start()
     {
+        if (!OwnsActiveScene())
+        {
+            return;
+        }
+
         GameInput.ResetState();
         ClearSpawnedLobbyPlayers();
         joinedBindings.Clear();
@@ -43,6 +49,11 @@ public class LobbyManager : MonoBehaviour
 
     void Update()
     {
+        if (!OwnsActiveScene())
+        {
+            return;
+        }
+
         HandleJoin();
         HandleHoldLeave();
         SyncSessionData();
@@ -209,11 +220,18 @@ public class LobbyManager : MonoBehaviour
         PlayerController[] existingPlayers = FindObjectsOfType<PlayerController>(true);
         for (int i = 0; i < existingPlayers.Length; i++)
         {
-            if (existingPlayers[i] != null)
+            if (existingPlayers[i] != null &&
+                existingPlayers[i].gameObject.scene.handle == gameObject.scene.handle)
             {
                 Destroy(existingPlayers[i].gameObject);
             }
         }
+    }
+
+    bool OwnsActiveScene()
+    {
+        return gameObject.scene.IsValid() &&
+               gameObject.scene.handle == SceneManager.GetActiveScene().handle;
     }
 
     void SyncSessionData()
@@ -239,18 +257,18 @@ public class LobbyManager : MonoBehaviour
                 continue;
             }
 
+            PlayerAvatarDefinition avatar = GetAvatarDefinition(controller.playerPrefabIndex);
+
             sessionPlayers.Add(new PlayerSessionManager.SessionPlayer
             {
                 slot = slot,
                 binding = controller.inputBinding,
                 prefabIndex = controller.playerPrefabIndex,
-                displayName = GetAvatarDefinition(controller.playerPrefabIndex)?.displayName,
-                uiColor = GetAvatarDefinition(controller.playerPrefabIndex) != null
-                    ? GetAvatarDefinition(controller.playerPrefabIndex).uiColor
-                    : Color.white,
-                idleSprite = GetAvatarDefinition(controller.playerPrefabIndex)?.idleSprite,
-                runSpriteA = GetAvatarDefinition(controller.playerPrefabIndex)?.runSpriteA,
-                runSpriteB = GetAvatarDefinition(controller.playerPrefabIndex)?.runSpriteB
+                displayName = avatar != null ? avatar.displayName : string.Empty,
+                uiColor = avatar != null ? avatar.uiColor : Color.white,
+                idleSprite = avatar != null ? avatar.idleSprite : null,
+                runSpriteA = avatar != null ? avatar.runSpriteA : null,
+                runSpriteB = avatar != null ? avatar.runSpriteB : null
             });
         }
 
@@ -322,10 +340,42 @@ public class LobbyManager : MonoBehaviour
 
     PlayerAvatarDefinition GetAvatarDefinition(int prefabIndex)
     {
-        List<PlayerAvatarDefinition> avatars = sharedPlayerRosterConfig != null
-            ? sharedPlayerRosterConfig.playerAvatars
-            : playerAvatars;
+        PlayerAvatarDefinition sceneAvatar = GetAvatarDefinitionFromList(playerAvatars, prefabIndex);
+        PlayerAvatarDefinition sharedAvatar = GetAvatarDefinitionFromList(
+            sharedPlayerRosterConfig != null ? sharedPlayerRosterConfig.playerAvatars : null,
+            prefabIndex
+        );
 
+        if (sceneAvatar == null && sharedAvatar == null)
+        {
+            return null;
+        }
+
+        return new PlayerAvatarDefinition
+        {
+            displayName = !string.IsNullOrWhiteSpace(sceneAvatar != null ? sceneAvatar.displayName : null)
+                ? sceneAvatar.displayName.Trim()
+                : (sharedAvatar != null ? sharedAvatar.displayName : string.Empty),
+            uiColor = HasLobbyOverrideColor(sceneAvatar)
+                ? sceneAvatar.uiColor
+                : (sharedAvatar != null ? sharedAvatar.uiColor : Color.white),
+            idleSprite = sceneAvatar != null && sceneAvatar.idleSprite != null
+                ? sceneAvatar.idleSprite
+                : (sharedAvatar != null ? sharedAvatar.idleSprite : null),
+            runSpriteA = sceneAvatar != null && sceneAvatar.runSpriteA != null
+                ? sceneAvatar.runSpriteA
+                : (sharedAvatar != null ? sharedAvatar.runSpriteA : null),
+            runSpriteB = sceneAvatar != null && sceneAvatar.runSpriteB != null
+                ? sceneAvatar.runSpriteB
+                : (sharedAvatar != null ? sharedAvatar.runSpriteB : null)
+        };
+    }
+
+    PlayerAvatarDefinition GetAvatarDefinitionFromList(
+        List<PlayerAvatarDefinition> avatars,
+        int prefabIndex
+    )
+    {
         if (avatars == null ||
             prefabIndex < 0 ||
             prefabIndex >= avatars.Count)
@@ -334,5 +384,17 @@ public class LobbyManager : MonoBehaviour
         }
 
         return avatars[prefabIndex];
+    }
+
+    bool HasLobbyOverrideColor(PlayerAvatarDefinition avatar)
+    {
+        if (avatar == null || avatar.uiColor.a <= 0.01f)
+        {
+            return false;
+        }
+
+        return !Mathf.Approximately(avatar.uiColor.r, 1f) ||
+               !Mathf.Approximately(avatar.uiColor.g, 1f) ||
+               !Mathf.Approximately(avatar.uiColor.b, 1f);
     }
 }

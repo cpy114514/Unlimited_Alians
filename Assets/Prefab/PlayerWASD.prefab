@@ -26,8 +26,8 @@ Transform:
   m_GameObject: {fileID: 861398417945826631}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.5, y: 0, z: 0}
-  m_LocalScale: {x: 0.075, y: 1.2244802, z: 1}
+  m_LocalPosition: {x: -0.5, y: -0.0562, z: 0}
+  m_LocalScale: {x: 0.075, y: 1.031367, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7759572300233458277}
@@ -198,7 +198,7 @@ MonoBehaviour:
   airAcceleration: 55
   airDeceleration: 35
   maxFallSpeed: 20
-  jumpForce: 9.5
+  jumpForce: 10
   fallMultiplier: 4.2
   lowJumpMultiplier: 6
   jumpBufferTime: 0.12
@@ -206,6 +206,12 @@ MonoBehaviour:
   wallJumpForceX: 8
   wallJumpForceY: 12
   wallSlideSpeed: 2.4
+  ladderClimbSpeed: 5.2
+  ladderSnapSpeed: 14
+  ladderTopJumpGrace: 0.18
+  ladderJumpDetachDuration: 0.12
+  ladderTopSupportSnapDistance: 0.16
+  ladderTopSupportHorizontalPadding: 0.04
   stepUpHeight: 0.52
   stepCheckDistance: 0.12
   stepForwardNudge: 0.08
@@ -329,7 +335,7 @@ BoxCollider2D:
   m_IsTrigger: 0
   m_UsedByEffector: 0
   m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0}
+  m_Offset: {x: 0, y: -0.005706519}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
@@ -340,7 +346,7 @@ BoxCollider2D:
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 1.25, y: 1.4375}
+  m_Size: {x: 1, y: 1.1748788}
   m_EdgeRadius: 0
 --- !u!1 &1927843742156195314
 GameObject:
@@ -368,8 +374,8 @@ Transform:
   m_GameObject: {fileID: 1927843742156195314}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.5, y: 0, z: 0}
-  m_LocalScale: {x: 0.075, y: 1.2264, z: 1}
+  m_LocalPosition: {x: 0.5, y: -0.0544, z: 0}
+  m_LocalScale: {x: 0.075, y: 1.0536548, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7759572300233458277}
@@ -453,8 +459,8 @@ Transform:
   m_GameObject: {fileID: 3314241165199230107}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.0045, y: -0.6234, z: 0}
-  m_LocalScale: {x: 1.1090201, y: 0.056870002, z: 1}
+  m_LocalPosition: {x: 0.001, y: -0.5992, z: 0}
+  m_LocalScale: {x: 1.1090201, y: 0.09251043, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7759572300233458277}

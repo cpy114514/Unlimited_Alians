@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
+[ExecuteAlways]
 public class Trampoline : MonoBehaviour
 {
     public Sprite idleSprite;
@@ -17,16 +18,17 @@ public class Trampoline : MonoBehaviour
     public Vector2 triggerSize = new Vector2(0.38f, 0.16f);
     public Vector2 triggerOffset = new Vector2(0f, 0.2f);
 
-    SpriteRenderer spriteRenderer;
-    BoxCollider2D bodyCollider;
-    BoxCollider2D leftSupportCollider;
-    BoxCollider2D rightSupportCollider;
-    BoxCollider2D bottomSupportCollider;
-    BoxCollider2D bounceTrigger;
-    GameObject leftSupportObject;
-    GameObject rightSupportObject;
-    GameObject bottomSupportObject;
-    TrampolineBounceTrigger bounceTriggerRelay;
+    [Header("Generated References")]
+    [SerializeField] SpriteRenderer spriteRenderer;
+    [SerializeField] BoxCollider2D bodyCollider;
+    [SerializeField] BoxCollider2D leftSupportCollider;
+    [SerializeField] BoxCollider2D rightSupportCollider;
+    [SerializeField] BoxCollider2D bottomSupportCollider;
+    [SerializeField] BoxCollider2D bounceTrigger;
+    [SerializeField] GameObject leftSupportObject;
+    [SerializeField] GameObject rightSupportObject;
+    [SerializeField] GameObject bottomSupportObject;
+    [SerializeField] TrampolineBounceTrigger bounceTriggerRelay;
     readonly Dictionary<PlayerController, float> lastBounceTimes =
         new Dictionary<PlayerController, float>();
     readonly Dictionary<BlueBeetleEnemy, float> lastEnemyBounceTimes =
@@ -37,6 +39,16 @@ public class Trampoline : MonoBehaviour
     public float BounceForce => bounceForce;
 
     void Awake()
+    {
+        spriteRenderer = GetComponent<SpriteRenderer>();
+        CacheCollider();
+        ConfigureCollider();
+        EnsureSupportColliders();
+        EnsureBounceTrigger();
+        UpdateSprite();
+    }
+
+    void OnEnable()
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
         CacheCollider();

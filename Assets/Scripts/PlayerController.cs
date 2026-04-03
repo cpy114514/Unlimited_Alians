@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 public class PlayerController : MonoBehaviour
 {
@@ -42,6 +43,14 @@ public class PlayerController : MonoBehaviour
     [Header("Wall Slide")]
     public float wallSlideSpeed = 2f;
 
+    [Header("Ladder")]
+    public float ladderClimbSpeed = 5.2f;
+    public float ladderSnapSpeed = 14f;
+    public float ladderTopJumpGrace = 0.18f;
+    public float ladderJumpDetachDuration = 0.12f;
+    public float ladderTopSupportSnapDistance = 0.16f;
+    public float ladderTopSupportHorizontalPadding = 0.04f;
+
     [Header("Step Climb")]
     public float stepUpHeight = 0.52f;
     public float stepCheckDistance = 0.12f;
@@ -77,12 +86,16 @@ public class PlayerController : MonoBehaviour
     BoxCollider2D bodyCollider;
     SpriteRenderer tagMarkerRenderer;
     readonly Collider2D[] tagOverlapBuffer = new Collider2D[8];
+    readonly RaycastHit2D[] groundRaycastBuffer = new RaycastHit2D[8];
+    readonly Collider2D[] groundOverlapBuffer = new Collider2D[8];
 
     float horizontal;
+    float vertical;
     bool jumpHeld;
     bool holdJumpQueued;
     bool buildPhaseFrozen;
     bool externalMotionOnly;
+    bool isClimbingLadder;
 
     bool isGrounded;
     bool touchingWallLeft;
@@ -94,12 +107,17 @@ public class PlayerController : MonoBehaviour
     float coyoteTimer;
     float jumpBufferTimer;
     float runAnimationTimer;
+    float defaultGravityScale;
+    float ladderIgnoreUntilTime;
+    readonly HashSet<Ladder> overlappingLadders = new HashSet<Ladder>();
+    Ladder activeLadder;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         sr = GetComponent<SpriteRenderer>();
         bodyCollider = GetComponent<BoxCollider2D>();
+        defaultGravityScale = rb != null ? rb.gravityScale : 1f;
 
         if (idleSprite == null && sr != null)
         {
@@ -160,6 +178,7 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        ApplyVirtualLadderTopSupport();
         HandleMovement();
         TryStepUp();
         HandleWallSlide();
@@ -170,12 +189,14 @@ public class PlayerController : MonoBehaviour
     void ClearInput()
     {
         horizontal = 0f;
+        vertical = 0f;
         jumpHeld = false;
         holdJumpQueued = false;
         jumpBufferTimer = 0f;
         groundedTrampoline = null;
         contactedTrampoline = null;
         trampolineContactExpiryTime = 0f;
+        StopClimbingLadder(false);
     }
 
     public void SetControlEnabled(bool enabled)
@@ -186,6 +207,7 @@ public class PlayerController : MonoBehaviour
 
         if (!enabled)
         {
+            StopClimbingLadder(false);
             rb.velocity = Vector2.zero;
             rb.angularVelocity = 0f;
         }
@@ -205,6 +227,10 @@ public class PlayerController : MonoBehaviour
         rb.velocity = Vector2.zero;
         rb.angularVelocity = 0f;
         rb.simulated = !frozen;
+        if (frozen)
+        {
+            StopClimbingLadder(false);
+        }
 
         if (!frozen)
         {
@@ -228,6 +254,10 @@ public class PlayerController : MonoBehaviour
         jumpBufferTimer = 0f;
         holdJumpQueued = false;
         runAnimationTimer = 0f;
+        ladderIgnoreUntilTime = 0f;
+        overlappingLadders.Clear();
+        activeLadder = null;
+        StopClimbingLadder(false);
         DetectGround();
         DetectWalls();
         SetSprite(idleSprite);
@@ -301,6 +331,8 @@ public class PlayerController : MonoBehaviour
         rb.angularVelocity = 0f;
         coyoteTimer = 0f;
         jumpBufferTimer = 0f;
+        ladderIgnoreUntilTime = 0f;
+        StopClimbingLadder(false);
         isGrounded = false;
         DetectWalls();
     }
@@ -344,6 +376,24 @@ public class PlayerController : MonoBehaviour
         groundedTrampoline = null;
         contactedTrampoline = null;
         trampolineContactExpiryTime = 0f;
+    }
+
+    public void RefreshCollisionStateAfterEnvironmentChange()
+    {
+        DetectGround();
+        DetectWalls();
+
+        if (rb == null)
+        {
+            return;
+        }
+
+        rb.WakeUp();
+
+        if (!isClimbingLadder && !isGrounded && Mathf.Abs(rb.velocity.y) < 0.05f)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, -0.05f);
+        }
     }
 
     public void RegisterTrampolineContact(Trampoline trampoline)
@@ -390,8 +440,17 @@ public class PlayerController : MonoBehaviour
     void HandleInput()
     {
         horizontal = GameInput.GetHorizontal(inputBinding);
+        vertical = GameInput.GetVertical(inputBinding);
         jumpHeld = GameInput.GetJumpHeld(inputBinding);
         bool jumpPressed = GameInput.GetJumpPressed(inputBinding);
+
+        if (TryGetActiveLadder(out Ladder ladder) &&
+            ShouldEnterLadderClimb(ladder, GetLadderVerticalIntent()))
+        {
+            jumpBufferTimer = 0f;
+            holdJumpQueued = false;
+            return;
+        }
 
         if (jumpPressed)
         {
@@ -415,38 +474,54 @@ public class PlayerController : MonoBehaviour
 
     void DetectGround()
     {
-        RaycastHit2D groundHit = Physics2D.Raycast(
+        if (isClimbingLadder)
+        {
+            isGrounded = false;
+            groundedTrampoline = null;
+            return;
+        }
+
+        RaycastHit2D groundHit = RaycastGroundIgnoringTriggers(
             groundCheck.position,
             Vector2.down,
-            groundCheckDistance,
-            groundLayer
+            groundCheckDistance
         );
 
         isGrounded = groundHit.collider != null;
         groundedTrampoline = isGrounded
             ? groundHit.collider.GetComponentInParent<Trampoline>()
             : null;
+
+        if (!isGrounded && TryGetVirtualLadderTopSupport(out _))
+        {
+            isGrounded = true;
+            groundedTrampoline = null;
+        }
     }
 
     void DetectWalls()
     {
-        touchingWallLeft = Physics2D.Raycast(
+        touchingWallLeft = RaycastGroundIgnoringTriggers(
             wallCheckLeft.position,
             Vector2.left,
-            wallCheckDistance,
-            groundLayer
-        );
+            wallCheckDistance
+        ).collider != null;
 
-        touchingWallRight = Physics2D.Raycast(
+        touchingWallRight = RaycastGroundIgnoringTriggers(
             wallCheckRight.position,
             Vector2.right,
-            wallCheckDistance,
-            groundLayer
-        );
+            wallCheckDistance
+        ).collider != null;
     }
 
     void HandleCoyoteTime()
     {
+        if (isClimbingLadder)
+        {
+            coyoteTimer = 0f;
+            return;
+        }
+
         if (isGrounded)
         {
             coyoteTimer = coyoteTime;
@@ -459,6 +534,22 @@ public class PlayerController : MonoBehaviour
 
     void HandleJump()
     {
+        float ladderVerticalIntent = GetLadderVerticalIntent();
+
+        if (!isClimbingLadder &&
+            TryGetActiveLadder(out Ladder ladderForEntry) &&
+            ShouldEnterLadderClimb(ladderForEntry, ladderVerticalIntent))
+        {
+            jumpBufferTimer = 0f;
+            coyoteTimer = 0f;
+            return;
+        }
+
+        if (HandleLadderJump(ladderVerticalIntent))
+        {
+            return;
+        }
+
         if (jumpBufferTimer <= 0f)
         {
             return;
@@ -542,6 +633,11 @@ public class PlayerController : MonoBehaviour
 
     void HandleMovement()
     {
+        if (HandleLadderMovement())
+        {
+            return;
+        }
+
         float speedMultiplier = 1f;
         if (RoundManager.Instance != null)
         {
@@ -589,22 +685,20 @@ public class PlayerController : MonoBehaviour
         );
         Vector2 upperOrigin = lowerOrigin + Vector2.up * stepUpHeight;
 
-        RaycastHit2D lowerHit = Physics2D.Raycast(
+        RaycastHit2D lowerHit = RaycastGroundIgnoringTriggers(
             lowerOrigin,
             Vector2.right * direction,
-            stepCheckDistance,
-            groundLayer
+            stepCheckDistance
         );
         if (lowerHit.collider == null)
         {
             return;
         }
 
-        RaycastHit2D upperHit = Physics2D.Raycast(
+        RaycastHit2D upperHit = RaycastGroundIgnoringTriggers(
             upperOrigin,
             Vector2.right * direction,
-            stepCheckDistance,
-            groundLayer
+            stepCheckDistance
         );
         if (upperHit.collider != null)
         {
@@ -612,11 +706,10 @@ public class PlayerController : MonoBehaviour
         }
 
         Vector2 landingProbe = upperOrigin + Vector2.right * direction * (stepCheckDistance + 0.02f);
-        RaycastHit2D landingHit = Physics2D.Raycast(
+        RaycastHit2D landingHit = RaycastGroundIgnoringTriggers(
             landingProbe,
             Vector2.down,
-            stepUpHeight + 0.2f,
-            groundLayer
+            stepUpHeight + 0.2f
         );
         if (landingHit.collider == null)
         {
@@ -633,11 +726,10 @@ public class PlayerController : MonoBehaviour
         Vector2 stepOffset = new Vector2(direction * stepForwardNudge, verticalLift);
         Vector2 overlapCenter = (Vector2)bounds.center + stepOffset;
         Vector2 overlapSize = bounds.size - new Vector3(0.06f, 0.04f, 0f);
-        Collider2D blockingCollider = Physics2D.OverlapBox(
+        Collider2D blockingCollider = OverlapGroundIgnoringTriggers(
             overlapCenter,
             overlapSize,
-            0f,
-            groundLayer
+            0f
         );
 
         if (blockingCollider != null && blockingCollider.transform.root != transform)
@@ -651,8 +743,65 @@ public class PlayerController : MonoBehaviour
         DetectWalls();
     }
 
+    RaycastHit2D RaycastGroundIgnoringTriggers(Vector2 origin, Vector2 direction, float distance)
+    {
+        ContactFilter2D filter = new ContactFilter2D();
+        filter.useLayerMask = true;
+        filter.useTriggers = false;
+        filter.SetLayerMask(groundLayer);
+
+        int hitCount = Physics2D.Raycast(
+            origin,
+            direction,
+            filter,
+            groundRaycastBuffer,
+            distance
+        );
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            if (groundRaycastBuffer[i].collider != null)
+            {
+                return groundRaycastBuffer[i];
+            }
+        }
+
+        return default;
+    }
+
+    Collider2D OverlapGroundIgnoringTriggers(Vector2 center, Vector2 size, float angle)
+    {
+        ContactFilter2D filter = new ContactFilter2D();
+        filter.useLayerMask = true;
+        filter.useTriggers = false;
+        filter.SetLayerMask(groundLayer);
+
+        int hitCount = Physics2D.OverlapBox(
+            center,
+            size,
+            angle,
+            filter,
+            groundOverlapBuffer
+        );
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            if (groundOverlapBuffer[i] != null)
+            {
+                return groundOverlapBuffer[i];
+            }
+        }
+
+        return null;
+    }
+
     void HandleWallSlide()
     {
+        if (isClimbingLadder)
+        {
+            return;
+        }
+
         if (!isGrounded && (touchingWallLeft || touchingWallRight) && rb.velocity.y < 0)
         {
             rb.velocity = new Vector2(rb.velocity.x, -wallSlideSpeed);
@@ -661,6 +810,11 @@ public class PlayerController : MonoBehaviour
 
     void BetterJump()
     {
+        if (isClimbingLadder)
+        {
+            return;
+        }
+
         if (rb.velocity.y < 0)
         {
             rb.velocity += Vector2.up * Physics2D.gravity.y *
@@ -706,6 +860,7 @@ public class PlayerController : MonoBehaviour
         bool shouldRunAnimate =
             hasRunAnimation &&
             canControl &&
+            !isClimbingLadder &&
             isGrounded &&
             Mathf.Abs(rb.velocity.x) > 0.1f &&
             Mathf.Abs(horizontal) > 0.1f;
@@ -742,6 +897,96 @@ public class PlayerController : MonoBehaviour
         NotifyTagContact(collision);
     }
 
+    void OnCollisionExit2D(Collision2D collision)
+    {
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        UpdateLadderOverlap(other, true);
+        NotifyTouchHideTileTrigger(other);
+    }
+
+    void OnTriggerStay2D(Collider2D other)
+    {
+        UpdateLadderOverlap(other, true);
+        NotifyTouchHideTileTrigger(other);
+    }
+
+    void OnTriggerExit2D(Collider2D other)
+    {
+        UpdateLadderOverlap(other, false);
+        NotifyTouchHideTileTriggerExit(other);
+    }
+
+    void NotifyTouchHideTileCollision(Collision2D collision)
+    {
+        if (collision == null)
+        {
+            return;
+        }
+
+        TouchHideTilemap touchHideTilemap = collision.collider != null
+            ? collision.collider.GetComponentInParent<TouchHideTilemap>()
+            : null;
+        if (touchHideTilemap == null)
+        {
+            return;
+        }
+
+        touchHideTilemap.HandlePlayerCollision(this, collision);
+    }
+
+    void NotifyTouchHideTileCollisionExit(Collision2D collision)
+    {
+        if (collision == null)
+        {
+            return;
+        }
+
+        TouchHideTilemap touchHideTilemap = collision.collider != null
+            ? collision.collider.GetComponentInParent<TouchHideTilemap>()
+            : null;
+        if (touchHideTilemap == null)
+        {
+            return;
+        }
+
+        touchHideTilemap.HandlePlayerCollisionExit(this);
+    }
+
+    void NotifyTouchHideTileTrigger(Collider2D other)
+    {
+        if (other == null)
+        {
+            return;
+        }
+
+        TouchHideTilemap touchHideTilemap = other.GetComponentInParent<TouchHideTilemap>();
+        if (touchHideTilemap == null)
+        {
+            return;
+        }
+
+        touchHideTilemap.HandlePlayerTrigger(this, bodyCollider != null ? bodyCollider : other);
+    }
+
+    void NotifyTouchHideTileTriggerExit(Collider2D other)
+    {
+        if (other == null)
+        {
+            return;
+        }
+
+        TouchHideTilemap touchHideTilemap = other.GetComponentInParent<TouchHideTilemap>();
+        if (touchHideTilemap == null)
+        {
+            return;
+        }
+
+        touchHideTilemap.HandlePlayerTriggerExit(this);
+    }
+
     void NotifyTagContact(Collision2D collision)
     {
         if (collision == null)
@@ -759,6 +1004,315 @@ public class PlayerController : MonoBehaviour
         }
 
         RoundManager.Instance?.TryTagContact(this, otherPlayer);
+    }
+
+    void UpdateLadderOverlap(Collider2D other, bool add)
+    {
+        if (other == null)
+        {
+            return;
+        }
+
+        LadderClimbZone ladderZone = other.GetComponent<LadderClimbZone>();
+        Ladder ladder = ladderZone != null ? ladderZone.owner : null;
+        if (ladder == null)
+        {
+            ladder = other.GetComponentInParent<Ladder>();
+        }
+
+        if (ladder == null)
+        {
+            return;
+        }
+
+        if (add)
+        {
+            overlappingLadders.Add(ladder);
+            activeLadder = ladder;
+            return;
+        }
+
+        overlappingLadders.Remove(ladder);
+        if (activeLadder == ladder)
+        {
+            activeLadder = null;
+        }
+
+        if (overlappingLadders.Count == 0)
+        {
+            StopClimbingLadder(true);
+        }
+    }
+
+    float GetLadderVerticalIntent()
+    {
+        if (jumpHeld)
+        {
+            return 1f;
+        }
+
+        if (vertical > 0.1f)
+        {
+            return 1f;
+        }
+
+        if (vertical < -0.1f)
+        {
+            return -1f;
+        }
+
+        return 0f;
+    }
+
+    bool HandleLadderJump(float ladderVerticalIntent)
+    {
+        if (!isClimbingLadder || jumpBufferTimer <= 0f)
+        {
+            return false;
+        }
+
+        if (CanJumpFromLadderTop(activeLadder))
+        {
+            StopClimbingLadder(false);
+            ladderIgnoreUntilTime = Time.time + ladderJumpDetachDuration;
+            rb.velocity = new Vector2(rb.velocity.x, 0f);
+            rb.velocity = new Vector2(rb.velocity.x, jumpForce);
+            coyoteTimer = 0f;
+            jumpBufferTimer = 0f;
+            isGrounded = false;
+            return true;
+        }
+
+        if (Mathf.Abs(ladderVerticalIntent) > 0.1f)
+        {
+            jumpBufferTimer = 0f;
+            return true;
+        }
+
+        StopClimbingLadder(false);
+        rb.velocity = new Vector2(rb.velocity.x, 0f);
+        rb.velocity = new Vector2(rb.velocity.x, jumpForce);
+        coyoteTimer = 0f;
+        jumpBufferTimer = 0f;
+        isGrounded = false;
+        return true;
+    }
+
+    bool CanJumpFromLadderTop(Ladder ladder)
+    {
+        if (ladder == null || bodyCollider == null)
+        {
+            return false;
+        }
+
+        return bodyCollider.bounds.min.y >= ladder.GetTopSurfaceY() - ladderTopJumpGrace;
+    }
+
+    bool HandleLadderMovement()
+    {
+        if (rb == null)
+        {
+            return false;
+        }
+
+        if (!TryGetActiveLadder(out Ladder ladder))
+        {
+            StopClimbingLadder(true);
+            return false;
+        }
+
+        float ladderVerticalIntent = GetLadderVerticalIntent();
+
+        if (!isClimbingLadder)
+        {
+            if (!ShouldEnterLadderClimb(ladder, ladderVerticalIntent))
+            {
+                return false;
+            }
+
+            StartClimbingLadder(ladder);
+        }
+
+        float snapSpeed = ladder != null ? ladder.horizontalSnapSpeed : ladderSnapSpeed;
+        float climbSpeed = ladder != null ? ladder.climbSpeed : ladderClimbSpeed;
+        float targetX = ladder != null ? ladder.GetSnapX() : transform.position.x;
+
+        rb.position = new Vector2(
+            Mathf.MoveTowards(rb.position.x, targetX, snapSpeed * Time.fixedDeltaTime),
+            rb.position.y
+        );
+        rb.velocity = new Vector2(
+            0f,
+            Mathf.Abs(ladderVerticalIntent) > 0.1f ? ladderVerticalIntent * climbSpeed : 0f
+        );
+        coyoteTimer = 0f;
+        groundedTrampoline = null;
+        contactedTrampoline = null;
+        return true;
+    }
+
+    bool ShouldEnterLadderClimb(Ladder ladder, float ladderVerticalIntent)
+    {
+        if (ladder == null || Mathf.Abs(ladderVerticalIntent) <= 0.1f)
+        {
+            return false;
+        }
+
+        if (CanJumpFromLadderTop(ladder))
+        {
+            return ladderVerticalIntent < -0.1f;
+        }
+
+        return true;
+    }
+
+    bool TryGetVirtualLadderTopSupport(out Ladder ladder)
+    {
+        ladder = null;
+
+        if (isClimbingLadder || bodyCollider == null || rb == null)
+        {
+            return false;
+        }
+
+        if (GetLadderVerticalIntent() < -0.1f)
+        {
+            return false;
+        }
+
+        overlappingLadders.RemoveWhere(item => item == null);
+        if (overlappingLadders.Count == 0)
+        {
+            return false;
+        }
+
+        Bounds bounds = bodyCollider.bounds;
+        float bottomY = bounds.min.y;
+        float horizontalPadding = Mathf.Max(0f, ladderTopSupportHorizontalPadding);
+        float snapDistance = Mathf.Max(0.02f, ladderTopSupportSnapDistance);
+
+        foreach (Ladder candidate in overlappingLadders)
+        {
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            if (!candidate.TryGetTopSupportBounds(out Bounds supportBounds))
+            {
+                continue;
+            }
+
+            float topY = supportBounds.max.y;
+            bool closeToTop = bottomY >= topY - snapDistance && bottomY <= topY + snapDistance;
+            bool descendingOrResting = rb.velocity.y <= 0.1f;
+            float minX = supportBounds.min.x + horizontalPadding;
+            float maxX = supportBounds.max.x - horizontalPadding;
+            if (maxX < minX)
+            {
+                float centerX = supportBounds.center.x;
+                minX = centerX;
+                maxX = centerX;
+            }
+
+            bool horizontallyAligned = bounds.center.x >= minX && bounds.center.x <= maxX;
+
+            if (!closeToTop || !descendingOrResting || !horizontallyAligned)
+            {
+                continue;
+            }
+
+            ladder = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    void ApplyVirtualLadderTopSupport()
+    {
+        if (!TryGetVirtualLadderTopSupport(out Ladder ladder) || bodyCollider == null || rb == null)
+        {
+            return;
+        }
+
+        float deltaY = ladder.GetTopSurfaceY() - bodyCollider.bounds.min.y;
+        if (Mathf.Abs(deltaY) > 0.0001f)
+        {
+            rb.position = new Vector2(rb.position.x, rb.position.y + deltaY);
+        }
+
+        if (rb.velocity.y < 0f)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, 0f);
+        }
+
+        isGrounded = true;
+        groundedTrampoline = null;
+        coyoteTimer = coyoteTime;
+    }
+
+    bool TryGetActiveLadder(out Ladder ladder)
+    {
+        ladder = null;
+        overlappingLadders.RemoveWhere(item => item == null);
+
+        if (Application.isPlaying && Time.time < ladderIgnoreUntilTime)
+        {
+            activeLadder = null;
+            return false;
+        }
+
+        if (activeLadder != null && overlappingLadders.Contains(activeLadder))
+        {
+            ladder = activeLadder;
+            return true;
+        }
+
+        foreach (Ladder candidate in overlappingLadders)
+        {
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            activeLadder = candidate;
+            ladder = candidate;
+            return true;
+        }
+
+        activeLadder = null;
+        return false;
+    }
+
+    void StartClimbingLadder(Ladder ladder)
+    {
+        if (rb == null)
+        {
+            return;
+        }
+
+        activeLadder = ladder;
+        isClimbingLadder = true;
+        rb.gravityScale = 0f;
+        groundedTrampoline = null;
+        contactedTrampoline = null;
+        trampolineContactExpiryTime = 0f;
+        jumpBufferTimer = 0f;
+    }
+
+    void StopClimbingLadder(bool preserveActiveLadder)
+    {
+        if (rb != null)
+        {
+            rb.gravityScale = defaultGravityScale;
+        }
+
+        isClimbingLadder = false;
+        if (!preserveActiveLadder)
+        {
+            activeLadder = null;
+        }
     }
 
     void CheckTagOverlap()

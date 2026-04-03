@@ -330,30 +330,31 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
-        if (session.idleSprite != null || session.runSpriteA != null || session.runSpriteB != null)
+        PlayerAvatarDefinition mergedAvatar = GetAvatarDefinition(session.prefabIndex);
+        definition = new PlayerAvatarDefinition
         {
-            definition = new PlayerAvatarDefinition
-            {
-                displayName = session.displayName,
-                uiColor = session.uiColor,
-                idleSprite = session.idleSprite,
-                runSpriteA = session.runSpriteA,
-                runSpriteB = session.runSpriteB
-            };
-            return true;
-        }
+            displayName = !string.IsNullOrWhiteSpace(session.displayName)
+                ? session.displayName.Trim()
+                : (mergedAvatar != null ? mergedAvatar.displayName : string.Empty),
+            uiColor = HasSessionColor(session.uiColor)
+                ? session.uiColor
+                : (mergedAvatar != null ? mergedAvatar.uiColor : Color.white),
+            idleSprite = session.idleSprite != null
+                ? session.idleSprite
+                : (mergedAvatar != null ? mergedAvatar.idleSprite : null),
+            runSpriteA = session.runSpriteA != null
+                ? session.runSpriteA
+                : (mergedAvatar != null ? mergedAvatar.runSpriteA : null),
+            runSpriteB = session.runSpriteB != null
+                ? session.runSpriteB
+                : (mergedAvatar != null ? mergedAvatar.runSpriteB : null)
+        };
 
-        List<PlayerAvatarDefinition> avatars = sharedPlayerRosterConfig != null
-            ? sharedPlayerRosterConfig.playerAvatars
-            : playerAvatars;
-
-        if (avatars == null || session.prefabIndex < 0 || session.prefabIndex >= avatars.Count)
-        {
-            return false;
-        }
-
-        definition = avatars[session.prefabIndex];
-        return definition != null;
+        return definition.idleSprite != null ||
+               definition.runSpriteA != null ||
+               definition.runSpriteB != null ||
+               !string.IsNullOrWhiteSpace(definition.displayName) ||
+               definition.uiColor.a > 0.01f;
     }
 
     public Color GetPlayerUiColor(PlayerController.ControlType type)
@@ -422,6 +423,76 @@ public class GameManager : MonoBehaviour
         }
 
         return Color.white;
+    }
+
+    PlayerAvatarDefinition GetAvatarDefinition(int prefabIndex)
+    {
+        PlayerAvatarDefinition sceneAvatar = GetAvatarDefinitionFromList(playerAvatars, prefabIndex);
+        PlayerAvatarDefinition sharedAvatar = GetAvatarDefinitionFromList(
+            sharedPlayerRosterConfig != null ? sharedPlayerRosterConfig.playerAvatars : null,
+            prefabIndex
+        );
+
+        if (sceneAvatar == null && sharedAvatar == null)
+        {
+            return null;
+        }
+
+        return new PlayerAvatarDefinition
+        {
+            displayName = !string.IsNullOrWhiteSpace(sceneAvatar != null ? sceneAvatar.displayName : null)
+                ? sceneAvatar.displayName.Trim()
+                : (sharedAvatar != null ? sharedAvatar.displayName : string.Empty),
+            uiColor = HasSceneOverrideColor(sceneAvatar)
+                ? sceneAvatar.uiColor
+                : (sharedAvatar != null ? sharedAvatar.uiColor : Color.white),
+            idleSprite = sceneAvatar != null && sceneAvatar.idleSprite != null
+                ? sceneAvatar.idleSprite
+                : (sharedAvatar != null ? sharedAvatar.idleSprite : null),
+            runSpriteA = sceneAvatar != null && sceneAvatar.runSpriteA != null
+                ? sceneAvatar.runSpriteA
+                : (sharedAvatar != null ? sharedAvatar.runSpriteA : null),
+            runSpriteB = sceneAvatar != null && sceneAvatar.runSpriteB != null
+                ? sceneAvatar.runSpriteB
+                : (sharedAvatar != null ? sharedAvatar.runSpriteB : null)
+        };
+    }
+
+    PlayerAvatarDefinition GetAvatarDefinitionFromList(
+        List<PlayerAvatarDefinition> avatars,
+        int prefabIndex
+    )
+    {
+        if (avatars == null || prefabIndex < 0 || prefabIndex >= avatars.Count)
+        {
+            return null;
+        }
+
+        return avatars[prefabIndex];
+    }
+
+    bool HasSceneOverrideColor(PlayerAvatarDefinition avatar)
+    {
+        if (avatar == null || avatar.uiColor.a <= 0.01f)
+        {
+            return false;
+        }
+
+        return !Mathf.Approximately(avatar.uiColor.r, 1f) ||
+               !Mathf.Approximately(avatar.uiColor.g, 1f) ||
+               !Mathf.Approximately(avatar.uiColor.b, 1f);
+    }
+
+    bool HasSessionColor(Color color)
+    {
+        if (color.a <= 0.01f)
+        {
+            return false;
+        }
+
+        return !Mathf.Approximately(color.r, 1f) ||
+               !Mathf.Approximately(color.g, 1f) ||
+               !Mathf.Approximately(color.b, 1f);
     }
 
     void OnDrawGizmosSelected()
@@ -542,18 +613,7 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        List<PlayerAvatarDefinition> avatars = sharedPlayerRosterConfig != null
-            ? sharedPlayerRosterConfig.playerAvatars
-            : playerAvatars;
-
-        if (avatars == null ||
-            prefabIndex < 0 ||
-            prefabIndex >= avatars.Count)
-        {
-            return;
-        }
-
-        PlayerAvatarDefinition avatar = avatars[prefabIndex];
+        PlayerAvatarDefinition avatar = GetAvatarDefinition(prefabIndex);
         if (avatar == null)
         {
             return;

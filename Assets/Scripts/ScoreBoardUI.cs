@@ -18,7 +18,18 @@ public class ScoreboardUI : MonoBehaviour
     [Header("Horizontal Bar")]
     public int targetScore = 6;
     public float displayDuration = 3f;
+    public bool autoRefreshEditorPreview;
+    public float layoutScale = 1.2f;
+    public float sparsePlayerScaleBoost = 1.45f;
+    public float sparsePanelWidthFill = 0.82f;
+    public float crowdedPanelWidthFill = 0.72f;
+    public float sparsePanelHeightFill = 0.34f;
+    public float crowdedPanelHeightFill = 0.76f;
+    public float maxAutoLayoutScale = 2.4f;
     public float rowSpacing = 96f;
+    public float crowdedRowSpacingScale = 0.82f;
+    public float titleToRowsGap = 34f;
+    public float layoutVerticalOffset = 0f;
     public float barWidth = 560f;
     public float barHeight = 44f;
     public float barAnimationDuration = 0.25f;
@@ -34,6 +45,16 @@ public class ScoreboardUI : MonoBehaviour
     public float blockGap = 10f;
     public float fullBlockDisplayWidth = 86f;
     public float fullBlockDisplayHeight = 64f;
+    public float blockTintVerticalInset = -3.666667f;
+    public float blockTintScale = 0.9f;
+    public float artVerticalOverflow = 100f;
+    public float chartGridFirstLinePixel = 1f;
+    public float chartGridStepPixels = 13f;
+    public float chartGridLineWidthPixels = 1f;
+    public float slimBlockPixelWidth = 8f;
+    public float slimBlockTransparentLeftPixels = 2f;
+    public float slimBlockTransparentRightPixels = 3f;
+    public float slimBlockTintPixelWidth = 1f;
     public float emptyBlockAlpha = 0f;
 
     static readonly PlayerController.ControlType[] fallbackOrder =
@@ -61,6 +82,9 @@ public class ScoreboardUI : MonoBehaviour
     readonly Dictionary<PlayerController.ControlType, List<Image>> blockImages =
         new Dictionary<PlayerController.ControlType, List<Image>>();
 
+    readonly Dictionary<PlayerController.ControlType, List<RectTransform>> blockRoots =
+        new Dictionary<PlayerController.ControlType, List<RectTransform>>();
+
     readonly Dictionary<PlayerController.ControlType, List<Image>> blockTintImages =
         new Dictionary<PlayerController.ControlType, List<Image>>();
 
@@ -76,6 +100,7 @@ public class ScoreboardUI : MonoBehaviour
     TextMeshProUGUI titleText;
     Coroutine animateRoutine;
     bool visualsBuilt;
+    int currentLayoutPlayerCount = 1;
     static Sprite fallbackBlockSprite;
     const float LabelWidth = 220f;
     const float LabelHeight = 44f;
@@ -83,12 +108,21 @@ public class ScoreboardUI : MonoBehaviour
     const float BarToScoreGap = 26f;
     const float ScoreWidth = 120f;
     const float ScoreHeight = 44f;
+    const float BaseTitleFontSize = 42f;
+    const float BaseRowBaselineOffset = 20f;
+    const float BaseLabelFontSize = 28f;
+    const float BaseScoreFontSize = 28f;
+    const float KenneyFontScale = 1.2f;
+    const float PlayerLabelFontSizeMin = 18f;
+    const float PlayerLabelFontSizeMax = 1000f;
+    const string ScoreboardTitleText = "SCOREBOARD";
 
     void Awake()
     {
         CacheLabels();
         TryAutoAssignBlockSprite();
         TryAutoAssignChartBackgroundSprite();
+        ResetVisualCache();
         EnsureVisualsBuilt();
         Hide();
     }
@@ -101,11 +135,45 @@ public class ScoreboardUI : MonoBehaviour
             return;
         }
 
-        CacheLabels();
-        TryAutoAssignBlockSprite();
-        TryAutoAssignChartBackgroundSprite();
-        EnsureVisualsBuilt();
-        ShowEditorPreview();
+        targetScore = Mathf.Max(1, targetScore);
+        displayDuration = Mathf.Max(0.1f, displayDuration);
+        layoutScale = Mathf.Max(0.5f, layoutScale);
+        sparsePlayerScaleBoost = Mathf.Max(1f, sparsePlayerScaleBoost);
+        sparsePanelWidthFill = Mathf.Clamp(sparsePanelWidthFill, 0.3f, 1f);
+        crowdedPanelWidthFill = Mathf.Clamp(crowdedPanelWidthFill, 0.3f, 1f);
+        sparsePanelHeightFill = Mathf.Clamp(sparsePanelHeightFill, 0.15f, 1f);
+        crowdedPanelHeightFill = Mathf.Clamp(crowdedPanelHeightFill, 0.15f, 1f);
+        maxAutoLayoutScale = Mathf.Max(0.5f, maxAutoLayoutScale);
+        rowSpacing = Mathf.Max(16f, rowSpacing);
+        crowdedRowSpacingScale = Mathf.Clamp(crowdedRowSpacingScale, 0.4f, 1f);
+        titleToRowsGap = Mathf.Max(0f, titleToRowsGap);
+        barWidth = Mathf.Max(120f, barWidth);
+        barHeight = Mathf.Max(12f, barHeight);
+        barAnimationDuration = Mathf.Max(0.01f, barAnimationDuration);
+        blockPaddingX = Mathf.Max(0f, blockPaddingX);
+        blockPaddingY = Mathf.Max(0f, blockPaddingY);
+        blockGap = Mathf.Max(0f, blockGap);
+        fullBlockDisplayWidth = Mathf.Max(1f, fullBlockDisplayWidth);
+        fullBlockDisplayHeight = Mathf.Max(1f, fullBlockDisplayHeight);
+        blockTintVerticalInset = Mathf.Clamp(blockTintVerticalInset, -64f, 64f);
+        blockTintScale = Mathf.Max(0.1f, blockTintScale);
+        artVerticalOverflow = Mathf.Max(0f, artVerticalOverflow);
+        chartGridFirstLinePixel = Mathf.Max(0f, chartGridFirstLinePixel);
+        chartGridStepPixels = Mathf.Max(1f, chartGridStepPixels);
+        chartGridLineWidthPixels = Mathf.Clamp(chartGridLineWidthPixels, 0f, chartGridStepPixels);
+        slimBlockPixelWidth = Mathf.Max(1f, slimBlockPixelWidth);
+        slimBlockTransparentLeftPixels = Mathf.Clamp(slimBlockTransparentLeftPixels, 0f, slimBlockPixelWidth - 1f);
+        slimBlockTransparentRightPixels = Mathf.Clamp(
+            slimBlockTransparentRightPixels,
+            0f,
+            Mathf.Max(0f, slimBlockPixelWidth - slimBlockTransparentLeftPixels - 1f)
+        );
+        slimBlockTintPixelWidth = Mathf.Clamp(slimBlockTintPixelWidth, 0.1f, GetSlimBlockVisiblePixelWidth());
+        emptyBlockAlpha = Mathf.Clamp01(emptyBlockAlpha);
+        if (autoRefreshEditorPreview)
+        {
+            RebuildEditorPreview();
+        }
     }
 #endif
 
@@ -119,15 +187,12 @@ public class ScoreboardUI : MonoBehaviour
             highlightedPlayers.Add(winner.Value);
         }
 
-        ShowResults(highlightedPlayers, GetRaceTitleText(winner, matchWon, false));
+        ShowResults(highlightedPlayers, ScoreboardTitleText);
     }
 
     public void ShowNoWinnerResults()
     {
-        ShowResults(
-            new List<PlayerController.ControlType>(),
-            GetRaceTitleText(null, false, true)
-        );
+        ShowResults(new List<PlayerController.ControlType>(), ScoreboardTitleText);
     }
 
     public void ShowTagRoundResults(ICollection<PlayerController.ControlType> survivors)
@@ -137,21 +202,7 @@ public class ScoreboardUI : MonoBehaviour
                 ? new List<PlayerController.ControlType>(survivors)
                 : new List<PlayerController.ControlType>();
 
-        string title;
-        if (highlightedPlayers.Count == 0)
-        {
-            title = "EVERYONE IS IT\nNO SURVIVORS";
-        }
-        else if (highlightedPlayers.Count == 1)
-        {
-            title = GetDisplayName(highlightedPlayers[0]) + " SURVIVES!";
-        }
-        else
-        {
-            title = "SURVIVORS WIN!";
-        }
-
-        ShowTagResults(highlightedPlayers, title);
+        ShowTagResults(highlightedPlayers, ScoreboardTitleText);
     }
 
     public void Hide()
@@ -170,12 +221,219 @@ public class ScoreboardUI : MonoBehaviour
 
     public void UpdateScores()
     {
-        ShowResults(new List<PlayerController.ControlType>(), "SCOREBOARD");
+        ShowResults(new List<PlayerController.ControlType>(), ScoreboardTitleText);
     }
 
     public float GetDisplayDuration()
     {
         return Mathf.Max(0.1f, displayDuration);
+    }
+
+    float GetLayoutScale()
+    {
+        float baseScale = Mathf.Max(0.5f, layoutScale);
+        float adaptiveScale = GetAdaptiveLayoutScale(GetActiveLayoutPlayerCount());
+        return Mathf.Clamp(Mathf.Max(baseScale, adaptiveScale), 0.5f, maxAutoLayoutScale);
+    }
+
+    int GetActiveLayoutPlayerCount()
+    {
+        return Mathf.Max(1, currentLayoutPlayerCount);
+    }
+
+    float GetAdaptiveLayoutScale(int playerCount)
+    {
+        RectTransform panelRect = panel != null ? panel.GetComponent<RectTransform>() : null;
+        if (panelRect == null || panelRect.rect.width <= 1f || panelRect.rect.height <= 1f)
+        {
+            return Mathf.Max(0.5f, layoutScale);
+        }
+
+        float playerCountT = GetPlayerCountSpacingT(playerCount);
+        float targetWidthFill = Mathf.Lerp(sparsePanelWidthFill, crowdedPanelWidthFill, playerCountT);
+        float targetHeightFill = Mathf.Lerp(sparsePanelHeightFill, crowdedPanelHeightFill, playerCountT);
+
+        float targetWidth = panelRect.rect.width * targetWidthFill;
+        float targetHeight = panelRect.rect.height * targetHeightFill;
+
+        float widthScale = targetWidth / Mathf.Max(1f, GetBaseLayoutWidth());
+        float heightScale = targetHeight / Mathf.Max(1f, GetBaseLayoutHeight(playerCount));
+        float fillScale = Mathf.Min(widthScale, heightScale);
+        float sparseBoostScale = Mathf.Lerp(sparsePlayerScaleBoost, 1f, playerCountT) * Mathf.Max(0.5f, layoutScale);
+
+        return Mathf.Min(maxAutoLayoutScale, Mathf.Max(fillScale, sparseBoostScale));
+    }
+
+    float GetBaseLayoutWidth()
+    {
+        return LabelWidth + LabelToBarGap + barWidth + BarToScoreGap + ScoreWidth;
+    }
+
+    float GetBaseRowVisualHeight()
+    {
+        return Mathf.Max(LabelHeight, barHeight, ScoreHeight);
+    }
+
+    float GetBaseRowSpacing(int playerCount)
+    {
+        float spacingScale = Mathf.Lerp(1f, crowdedRowSpacingScale, GetPlayerCountSpacingT(playerCount));
+        return rowSpacing * spacingScale;
+    }
+
+    float GetBaseRowsBodyHeight(int playerCount)
+    {
+        if (playerCount <= 0)
+        {
+            return 0f;
+        }
+
+        return GetBaseRowVisualHeight() + Mathf.Max(0, playerCount - 1) * GetBaseRowSpacing(playerCount);
+    }
+
+    float GetBaseLayoutHeight(int playerCount)
+    {
+        return GetBaseRowsBodyHeight(playerCount) + titleToRowsGap + BaseTitleFontSize * KenneyFontScale;
+    }
+
+    float GetPlayerCountSpacingT(int playerCount)
+    {
+        int maxVisiblePlayers = Mathf.Max(1, fallbackOrder.Length);
+        if (maxVisiblePlayers <= 1)
+        {
+            return 0f;
+        }
+
+        return Mathf.InverseLerp(1f, maxVisiblePlayers, Mathf.Clamp(playerCount, 1, maxVisiblePlayers));
+    }
+
+    float GetScaledRowSpacing(int playerCount)
+    {
+        float spacingScale = Mathf.Lerp(1f, crowdedRowSpacingScale, GetPlayerCountSpacingT(playerCount));
+        return rowSpacing * GetLayoutScale() * spacingScale;
+    }
+
+    float GetScaledBarWidth()
+    {
+        return barWidth * GetLayoutScale();
+    }
+
+    float GetScaledBarHeight()
+    {
+        return barHeight * GetLayoutScale();
+    }
+
+    float GetScaledTitleToRowsGap()
+    {
+        return titleToRowsGap * GetLayoutScale();
+    }
+
+    float GetScaledLayoutVerticalOffset()
+    {
+        return layoutVerticalOffset * GetLayoutScale();
+    }
+
+    float GetScaledLabelWidth()
+    {
+        return LabelWidth * GetLayoutScale();
+    }
+
+    float GetScaledLabelHeight()
+    {
+        return LabelHeight * GetLayoutScale();
+    }
+
+    float GetScaledLabelToBarGap()
+    {
+        return LabelToBarGap * GetLayoutScale();
+    }
+
+    float GetScaledBarToScoreGap()
+    {
+        return BarToScoreGap * GetLayoutScale();
+    }
+
+    float GetScaledScoreWidth()
+    {
+        return ScoreWidth * GetLayoutScale();
+    }
+
+    float GetScaledScoreHeight()
+    {
+        return ScoreHeight * GetLayoutScale();
+    }
+
+    float GetScaledTitleFontSize()
+    {
+        return BaseTitleFontSize * GetLayoutScale() * KenneyFontScale;
+    }
+
+    float GetScaledLabelFontSize()
+    {
+        return BaseLabelFontSize * GetLayoutScale() * KenneyFontScale;
+    }
+
+    float GetScaledScoreFontSize()
+    {
+        return BaseScoreFontSize * GetLayoutScale() * KenneyFontScale;
+    }
+
+    float GetScaledRowVisualHeight()
+    {
+        return Mathf.Max(GetScaledLabelHeight(), GetScaledBarHeight(), GetScaledScoreHeight());
+    }
+
+    float GetRowsBodyHeight(int playerCount)
+    {
+        if (playerCount <= 0)
+        {
+            return 0f;
+        }
+
+        return GetScaledRowVisualHeight() + Mathf.Max(0, playerCount - 1) * GetScaledRowSpacing(playerCount);
+    }
+
+    float GetTitleBottomY(int playerCount)
+    {
+        return (GetRowsBodyHeight(playerCount) + GetScaledTitleToRowsGap()) * 0.5f +
+               GetScaledLayoutVerticalOffset();
+    }
+
+    float GetTitlePreferredHeight(string title)
+    {
+        if (titleText == null)
+        {
+            return GetScaledTitleFontSize();
+        }
+
+        RectTransform titleRect = titleText.rectTransform;
+        float preferredWidth = titleRect != null && titleRect.rect.width > 1f
+            ? titleRect.rect.width
+            : GetScaledBarWidth() + GetScaledLabelWidth() + GetScaledScoreWidth();
+        Vector2 preferred = titleText.GetPreferredValues(title ?? string.Empty, preferredWidth, 0f);
+        return Mathf.Max(GetScaledTitleFontSize(), preferred.y);
+    }
+
+    void ConfigureTitle(string title, int playerCount)
+    {
+        if (titleText == null)
+        {
+            return;
+        }
+
+        titleText.alignment = TextAlignmentOptions.Center;
+        titleText.fontSize = GetScaledTitleFontSize();
+
+        RectTransform rect = titleText.rectTransform;
+        float preferredHeight = GetTitlePreferredHeight(title);
+        float preferredWidth = Mathf.Max(rect.sizeDelta.x, GetScaledBarWidth() + GetScaledLabelWidth());
+
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(preferredWidth, preferredHeight);
+        rect.anchoredPosition = new Vector2(0f, GetTitleBottomY(playerCount) + preferredHeight * 0.5f);
+
+        titleText.text = title;
     }
 
     void ShowResults(
@@ -271,6 +529,17 @@ public class ScoreboardUI : MonoBehaviour
                 continue;
             }
 
+            Transform existingTransform = FindNamedDescendant(panel.transform, type + "Label");
+            if (existingTransform != null)
+            {
+                TextMeshProUGUI existingLabel = existingTransform.GetComponent<TextMeshProUGUI>();
+                if (existingLabel != null)
+                {
+                    labels[type] = existingLabel;
+                    continue;
+                }
+            }
+
             labels[type] = CreateRuntimeLabelTemplate(type, template);
         }
     }
@@ -309,6 +578,7 @@ public class ScoreboardUI : MonoBehaviour
             return;
         }
 
+        RemoveDuplicateGeneratedVisuals();
         CacheLabels();
         titleText = FindTitleText();
         TryBindExistingVisuals();
@@ -326,6 +596,22 @@ public class ScoreboardUI : MonoBehaviour
         visualsBuilt = true;
     }
 
+    void ResetVisualCache()
+    {
+        visualsBuilt = false;
+        titleText = null;
+
+        labels.Clear();
+        barBackgrounds.Clear();
+        barFills.Clear();
+        fillImages.Clear();
+        blockImages.Clear();
+        blockRoots.Clear();
+        blockTintImages.Clear();
+        backgroundImages.Clear();
+        scoreTexts.Clear();
+    }
+
     void TryBindExistingVisuals()
     {
         if (panel == null)
@@ -337,7 +623,7 @@ public class ScoreboardUI : MonoBehaviour
         {
             if (!labels.ContainsKey(type))
             {
-                Transform labelTransform = panel.transform.Find(type + "Label");
+                Transform labelTransform = FindNamedDescendant(panel.transform, type + "Label");
                 if (labelTransform != null)
                 {
                     TextMeshProUGUI label = labelTransform.GetComponent<TextMeshProUGUI>();
@@ -348,12 +634,12 @@ public class ScoreboardUI : MonoBehaviour
                 }
             }
 
-            Transform backgroundTransform = panel.transform.Find(type + "BarBackground");
+            Transform backgroundTransform = FindNamedDescendant(panel.transform, type + "BarBackground");
             if (backgroundTransform != null)
             {
                 RectTransform backgroundRect = backgroundTransform.GetComponent<RectTransform>();
                 Image backgroundImage = backgroundTransform.GetComponent<Image>();
-                Transform fillTransform = backgroundTransform.Find(type + "BarFill");
+                Transform fillTransform = FindNamedDescendant(backgroundTransform, type + "BarFill");
                 RectTransform fillRect = fillTransform != null ? fillTransform.GetComponent<RectTransform>() : null;
                 Image fillImage = fillTransform != null ? fillTransform.GetComponent<Image>() : null;
 
@@ -374,7 +660,7 @@ public class ScoreboardUI : MonoBehaviour
                 }
             }
 
-            Transform scoreTransform = panel.transform.Find(type + "ScoreValue");
+            Transform scoreTransform = FindNamedDescendant(panel.transform, type + "ScoreValue");
             if (scoreTransform != null)
             {
                 TextMeshProUGUI score = scoreTransform.GetComponent<TextMeshProUGUI>();
@@ -384,6 +670,101 @@ public class ScoreboardUI : MonoBehaviour
                 }
             }
         }
+    }
+
+    void RemoveDuplicateGeneratedVisuals()
+    {
+        if (panel == null)
+        {
+            return;
+        }
+
+        foreach (PlayerController.ControlType type in fallbackOrder)
+        {
+            RemoveDuplicateNamedChildren(panel.transform, type + "Label");
+            RemoveDuplicateNamedChildren(panel.transform, type + "BarBackground");
+            RemoveDuplicateNamedChildren(panel.transform, type + "ScoreValue");
+        }
+    }
+
+    void RemoveDuplicateNamedChildren(Transform parent, string childName)
+    {
+        if (parent == null)
+        {
+            return;
+        }
+
+        Transform[] descendants = parent.GetComponentsInChildren<Transform>(true);
+        Transform keep = null;
+        List<GameObject> duplicates = new List<GameObject>();
+
+        for (int i = 0; i < descendants.Length; i++)
+        {
+            Transform child = descendants[i];
+            if (child == null || child == parent || child.name != childName)
+            {
+                continue;
+            }
+
+            bool preferThisChild = keep == null ||
+                                   (keep.parent != parent && child.parent == parent);
+            if (preferThisChild)
+            {
+                if (keep != null && keep != child)
+                {
+                    duplicates.Add(keep.gameObject);
+                }
+
+                keep = child;
+                continue;
+            }
+
+            duplicates.Add(child.gameObject);
+        }
+
+        for (int i = 0; i < duplicates.Count; i++)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                DestroyImmediate(duplicates[i]);
+                continue;
+            }
+#endif
+            Destroy(duplicates[i]);
+        }
+    }
+
+    Transform FindNamedDescendant(Transform parent, string childName)
+    {
+        if (parent == null)
+        {
+            return null;
+        }
+
+        Transform[] descendants = parent.GetComponentsInChildren<Transform>(true);
+        Transform firstMatch = null;
+
+        for (int i = 0; i < descendants.Length; i++)
+        {
+            Transform child = descendants[i];
+            if (child == null || child == parent || child.name != childName)
+            {
+                continue;
+            }
+
+            if (child.parent == parent)
+            {
+                return child;
+            }
+
+            if (firstMatch == null)
+            {
+                firstMatch = child;
+            }
+        }
+
+        return firstMatch;
     }
 
     TextMeshProUGUI FindTitleText()
@@ -438,8 +819,7 @@ public class ScoreboardUI : MonoBehaviour
         RectTransform fillRect = fillObject.GetComponent<RectTransform>();
         fillRect.anchorMin = Vector2.zero;
         fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = new Vector2(blockPaddingX, blockPaddingY);
-        fillRect.offsetMax = new Vector2(-blockPaddingX, -blockPaddingY);
+        ApplyFillRectPadding(fillRect);
         fillRect.anchoredPosition = Vector2.zero;
         fillRect.sizeDelta = Vector2.zero;
 
@@ -449,7 +829,7 @@ public class ScoreboardUI : MonoBehaviour
         TextMeshProUGUI scoreText = scoreObject.GetComponent<TextMeshProUGUI>();
         scoreText.font = labelTemplate.font;
         scoreText.fontSharedMaterial = labelTemplate.fontSharedMaterial;
-        scoreText.fontSize = 28f;
+        scoreText.fontSize = GetScaledScoreFontSize();
         scoreText.alignment = TextAlignmentOptions.Center;
         scoreText.color = Color.white;
         scoreText.text = "0/6";
@@ -464,9 +844,50 @@ public class ScoreboardUI : MonoBehaviour
 
     List<PlayerController.ControlType> GetVisiblePlayers()
     {
+        List<PlayerController.ControlType> sessionPlayers = GetSessionVisiblePlayers();
+        if (sessionPlayers.Count > 0)
+        {
+            return sessionPlayers;
+        }
+
+        List<PlayerController.ControlType> livePlayers = GetLiveScenePlayers();
+        if (livePlayers.Count > 0)
+        {
+            return livePlayers;
+        }
+
+        return new List<PlayerController.ControlType>
+        {
+            PlayerController.ControlType.WASD
+        };
+    }
+
+    List<PlayerController.ControlType> GetSessionVisiblePlayers()
+    {
         if (GameManager.Instance != null)
         {
-            return GameManager.Instance.GetSessionPlayers();
+            List<PlayerController.ControlType> players = GameManager.Instance.GetSessionPlayers();
+            if (players.Count > 0)
+            {
+                return players;
+            }
+        }
+
+        if (PlayerSessionManager.Instance != null &&
+            PlayerSessionManager.Instance.joinedPlayers.Count > 0)
+        {
+            List<PlayerController.ControlType> players =
+                new List<PlayerController.ControlType>();
+
+            foreach (PlayerController.ControlType type in fallbackOrder)
+            {
+                if (PlayerSessionManager.Instance.joinedPlayers.Exists(entry => entry != null && entry.slot == type))
+                {
+                    players.Add(type);
+                }
+            }
+
+            return players;
         }
 
         if (PlayerSessionManager.Instance != null &&
@@ -486,7 +907,38 @@ public class ScoreboardUI : MonoBehaviour
             return players;
         }
 
-        return new List<PlayerController.ControlType>(fallbackOrder);
+        return new List<PlayerController.ControlType>();
+    }
+
+    List<PlayerController.ControlType> GetLiveScenePlayers()
+    {
+        HashSet<PlayerController.ControlType> foundPlayers =
+            new HashSet<PlayerController.ControlType>();
+
+        PlayerController[] scenePlayers = FindObjectsOfType<PlayerController>(true);
+        for (int i = 0; i < scenePlayers.Length; i++)
+        {
+            PlayerController player = scenePlayers[i];
+            if (player == null || player.gameObject.scene.handle != gameObject.scene.handle)
+            {
+                continue;
+            }
+
+            foundPlayers.Add(player.controlType);
+        }
+
+        List<PlayerController.ControlType> orderedPlayers =
+            new List<PlayerController.ControlType>();
+
+        foreach (PlayerController.ControlType type in fallbackOrder)
+        {
+            if (foundPlayers.Contains(type))
+            {
+                orderedPlayers.Add(type);
+            }
+        }
+
+        return orderedPlayers;
     }
 
     void LayoutChart(
@@ -495,6 +947,8 @@ public class ScoreboardUI : MonoBehaviour
         string title
     )
     {
+        currentLayoutPlayerCount = Mathf.Max(1, visiblePlayers != null ? visiblePlayers.Count : 0);
+
         HashSet<PlayerController.ControlType> visibleSet =
             new HashSet<PlayerController.ControlType>(visiblePlayers);
 
@@ -531,23 +985,24 @@ public class ScoreboardUI : MonoBehaviour
             ApplyRaceBlocks(type, GetDisplayedScore(type), isHighlighted);
         }
 
-        if (titleText != null)
-        {
-            titleText.alignment = TextAlignmentOptions.Center;
-            titleText.fontSize = 42f;
-            titleText.text = title;
-        }
+        ConfigureTitle(title, visiblePlayers.Count);
     }
 
     float GetRowY(int index, int count)
     {
-        float startY = (count - 1) * rowSpacing * 0.5f;
-        return startY - index * rowSpacing - 20f;
+        float scaledRowSpacing = GetScaledRowSpacing(count);
+        float firstRowCenterY = GetTitleBottomY(count) - GetScaledTitleToRowsGap() - GetScaledRowVisualHeight() * 0.5f;
+        return firstRowCenterY - index * scaledRowSpacing;
     }
 
     float GetLayoutLeftEdge()
     {
-        float layoutWidth = LabelWidth + LabelToBarGap + barWidth + BarToScoreGap + ScoreWidth;
+        float layoutWidth =
+            GetScaledLabelWidth() +
+            GetScaledLabelToBarGap() +
+            GetScaledBarWidth() +
+            GetScaledBarToScoreGap() +
+            GetScaledScoreWidth();
         return -layoutWidth * 0.5f;
     }
 
@@ -558,12 +1013,12 @@ public class ScoreboardUI : MonoBehaviour
 
     float GetBarX()
     {
-        return GetLayoutLeftEdge() + LabelWidth + LabelToBarGap;
+        return GetLayoutLeftEdge() + GetScaledLabelWidth() + GetScaledLabelToBarGap();
     }
 
     float GetScoreCenterX()
     {
-        return GetBarX() + barWidth + BarToScoreGap + ScoreWidth * 0.5f;
+        return GetBarX() + GetScaledBarWidth() + GetScaledBarToScoreGap() + GetScaledScoreWidth() * 0.5f;
     }
 
     void ConfigureLabel(TextMeshProUGUI label, PlayerController.ControlType type, float yPosition)
@@ -572,13 +1027,10 @@ public class ScoreboardUI : MonoBehaviour
         rect.anchorMin = new Vector2(0.5f, 0.5f);
         rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0f, 0.5f);
-        rect.sizeDelta = new Vector2(LabelWidth, LabelHeight);
+        rect.sizeDelta = new Vector2(GetScaledLabelWidth(), GetScaledLabelHeight());
         rect.anchoredPosition = new Vector2(GetLabelX(), yPosition);
 
-        label.alignment = TextAlignmentOptions.Left;
-        label.fontSize = 28f;
-        label.color = Color.Lerp(GetPlayerColor(type), Color.white, 0.18f);
-        label.text = GetDisplayName(type);
+        ConfigurePlayerNameLabelAppearance(label, type);
     }
 
     void ConfigureBar(PlayerController.ControlType type, float yPosition, bool isWinner)
@@ -587,7 +1039,7 @@ public class ScoreboardUI : MonoBehaviour
         backgroundRect.anchorMin = new Vector2(0.5f, 0.5f);
         backgroundRect.anchorMax = new Vector2(0.5f, 0.5f);
         backgroundRect.pivot = new Vector2(0f, 0.5f);
-        backgroundRect.sizeDelta = new Vector2(barWidth, barHeight);
+        backgroundRect.sizeDelta = new Vector2(GetScaledBarWidth(), GetScaledBarHeight());
         backgroundRect.anchoredPosition = new Vector2(GetBarX(), yPosition);
         backgroundRect.localScale = isWinner ? Vector3.one * 1.03f : Vector3.one;
 
@@ -606,12 +1058,29 @@ public class ScoreboardUI : MonoBehaviour
         fillImages[type].sprite = null;
         fillRect.anchorMin = Vector2.zero;
         fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = new Vector2(blockPaddingX, blockPaddingY);
-        fillRect.offsetMax = new Vector2(-blockPaddingX, -blockPaddingY);
+        ApplyFillRectPadding(fillRect);
         fillRect.anchoredPosition = Vector2.zero;
         fillRect.sizeDelta = Vector2.zero;
 
         LayoutBlockImages(type);
+    }
+
+    void ApplyFillRectPadding(RectTransform fillRect)
+    {
+        if (fillRect == null)
+        {
+            return;
+        }
+
+        if (GetChartBackgroundSprite() != null)
+        {
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+            return;
+        }
+
+        fillRect.offsetMin = new Vector2(blockPaddingX, blockPaddingY);
+        fillRect.offsetMax = new Vector2(-blockPaddingX, -blockPaddingY);
     }
 
     void ConfigureScoreText(PlayerController.ControlType type, float yPosition)
@@ -620,8 +1089,9 @@ public class ScoreboardUI : MonoBehaviour
         rect.anchorMin = new Vector2(0.5f, 0.5f);
         rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0.5f, 0.5f);
-        rect.sizeDelta = new Vector2(ScoreWidth, ScoreHeight);
+        rect.sizeDelta = new Vector2(GetScaledScoreWidth(), GetScaledScoreHeight());
         rect.anchoredPosition = new Vector2(GetScoreCenterX(), yPosition);
+        scoreTexts[type].fontSize = GetScaledScoreFontSize();
     }
 
     IEnumerator AnimateBars(
@@ -687,6 +1157,8 @@ public class ScoreboardUI : MonoBehaviour
             animateRoutine = null;
         }
 
+        currentLayoutPlayerCount = Mathf.Max(1, visiblePlayers != null ? visiblePlayers.Count : 0);
+
         HashSet<PlayerController.ControlType> visibleSet =
             new HashSet<PlayerController.ControlType>(visiblePlayers);
 
@@ -733,33 +1205,7 @@ public class ScoreboardUI : MonoBehaviour
             ApplyTagBlocks(type, statusScore, survived);
         }
 
-        if (titleText != null)
-        {
-            titleText.alignment = TextAlignmentOptions.Center;
-            titleText.fontSize = 42f;
-            titleText.text = title;
-        }
-    }
-
-    string GetRaceTitleText(
-        PlayerController.ControlType? winner,
-        bool matchWon,
-        bool noWinner
-    )
-    {
-        if (noWinner)
-        {
-            return "NO PLAYER WINS\nNO POINTS AWARDED";
-        }
-
-        if (!winner.HasValue)
-        {
-            return "SCOREBOARD";
-        }
-
-        return matchWon
-            ? GetDisplayName(winner.Value) + " WINS THE MATCH!"
-            : GetDisplayName(winner.Value) + " WINS THE ROUND!";
+        ConfigureTitle(title, visiblePlayers.Count);
     }
 
     string GetDisplayName(PlayerController.ControlType type)
@@ -768,6 +1214,24 @@ public class ScoreboardUI : MonoBehaviour
         {
             return GameManager.Instance.GetPlayerDisplayName(type);
         }
+
+        if (PlayerSessionManager.Instance != null)
+        {
+            PlayerSessionManager.SessionPlayer session =
+                PlayerSessionManager.Instance.joinedPlayers.Find(entry => entry != null && entry.slot == type);
+            if (session != null && !string.IsNullOrWhiteSpace(session.displayName))
+            {
+                return session.displayName.Trim();
+            }
+        }
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying &&
+            TryGetEditorLobbyAvatar(type, out string editorDisplayName, out _))
+        {
+            return editorDisplayName;
+        }
+#endif
 
         return GameManager.GetDefaultPlayerDisplayName(type);
     }
@@ -778,6 +1242,24 @@ public class ScoreboardUI : MonoBehaviour
         {
             return GameManager.Instance.GetPlayerUiColor(type);
         }
+
+        if (PlayerSessionManager.Instance != null)
+        {
+            PlayerSessionManager.SessionPlayer session =
+                PlayerSessionManager.Instance.joinedPlayers.Find(entry => entry != null && entry.slot == type);
+            if (session != null && session.uiColor.a > 0.01f)
+            {
+                return session.uiColor;
+            }
+        }
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying &&
+            TryGetEditorLobbyAvatar(type, out _, out Color editorColor))
+        {
+            return editorColor;
+        }
+#endif
 
         return GameManager.GetDefaultPlayerUiColor(type);
     }
@@ -804,6 +1286,7 @@ public class ScoreboardUI : MonoBehaviour
 
         List<PlayerController.ControlType> previewPlayers =
             new List<PlayerController.ControlType>(fallbackOrder);
+        currentLayoutPlayerCount = Mathf.Max(1, previewPlayers.Count);
 
         HashSet<PlayerController.ControlType> highlightedPlayers =
             new HashSet<PlayerController.ControlType>
@@ -837,6 +1320,7 @@ public class ScoreboardUI : MonoBehaviour
         }
 
         SetPreviewTextIfEmpty(titleText, "SCOREBOARD");
+        ConfigureTitle(titleText != null ? titleText.text : "SCOREBOARD", previewPlayers.Count);
 
         float[] previewScores = { 6f, 5f, 4f, 3f, 2f, 1f };
         for (int i = 0; i < previewPlayers.Count; i++)
@@ -861,13 +1345,27 @@ public class ScoreboardUI : MonoBehaviour
         rect.anchorMin = new Vector2(0.5f, 0.5f);
         rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0f, 0.5f);
-        rect.sizeDelta = new Vector2(LabelWidth, LabelHeight);
+        rect.sizeDelta = new Vector2(GetScaledLabelWidth(), GetScaledLabelHeight());
         rect.anchoredPosition = new Vector2(GetLabelX(), yPosition);
 
+        ConfigurePlayerNameLabelAppearance(label, type);
+    }
+
+    void ConfigurePlayerNameLabelAppearance(TextMeshProUGUI label, PlayerController.ControlType type)
+    {
+        if (label == null)
+        {
+            return;
+        }
+
         label.alignment = TextAlignmentOptions.Left;
-        label.fontSize = 28f;
+        label.enableWordWrapping = false;
+        label.enableAutoSizing = true;
+        label.fontSizeMin = PlayerLabelFontSizeMin;
+        label.fontSizeMax = PlayerLabelFontSizeMax;
+        label.fontSize = Mathf.Max(GetScaledLabelFontSize(), PlayerLabelFontSizeMin);
         label.color = Color.Lerp(GetPlayerColor(type), Color.white, 0.18f);
-        SetPreviewTextIfEmpty(label, GetDisplayName(type));
+        label.text = GetDisplayName(type);
     }
 
     void SetPreviewTextIfEmpty(TextMeshProUGUI text, string fallback)
@@ -880,11 +1378,225 @@ public class ScoreboardUI : MonoBehaviour
         text.text = fallback;
     }
 
+#if UNITY_EDITOR
+    [ContextMenu("Cleanup Editor Generated Visuals")]
+    public void CleanupEditorGeneratedVisuals()
+    {
+        if (panel == null)
+        {
+            return;
+        }
+
+        Transform[] keepTransforms =
+        {
+            wasdText != null ? wasdText.transform : null,
+            ijklText != null ? ijklText.transform : null,
+            arrowText != null ? arrowText.transform : null,
+            FindTitleText() != null ? FindTitleText().transform : null
+        };
+
+        HashSet<Transform> keep = new HashSet<Transform>();
+        for (int i = 0; i < keepTransforms.Length; i++)
+        {
+            if (keepTransforms[i] != null)
+            {
+                keep.Add(keepTransforms[i]);
+            }
+        }
+
+        List<GameObject> toRemove = new List<GameObject>();
+        Transform[] descendants = panel.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < descendants.Length; i++)
+        {
+            Transform child = descendants[i];
+            if (child == null || child == panel.transform || keep.Contains(child))
+            {
+                continue;
+            }
+
+            if (IsGeneratedScoreboardObjectName(child.name))
+            {
+                toRemove.Add(child.gameObject);
+            }
+        }
+
+        for (int i = 0; i < toRemove.Count; i++)
+        {
+            DestroyImmediate(toRemove[i]);
+        }
+    }
+
+    [ContextMenu("Rebuild Editor Preview")]
+    public void RebuildEditorPreview()
+    {
+        if (Application.isPlaying)
+        {
+            return;
+        }
+
+        CleanupEditorGeneratedVisuals();
+        TryAutoAssignBlockSprite();
+        TryAutoAssignChartBackgroundSprite();
+        ResetVisualCache();
+        EnsureVisualsBuilt();
+        ShowEditorPreview();
+    }
+
+    public bool ShouldAutoRefreshEditorPreview()
+    {
+        return autoRefreshEditorPreview;
+    }
+
+    bool IsGeneratedScoreboardObjectName(string objectName)
+    {
+        if (string.IsNullOrEmpty(objectName))
+        {
+            return false;
+        }
+
+        for (int i = 0; i < fallbackOrder.Length; i++)
+        {
+            string labelName = fallbackOrder[i] + "Label";
+            string backgroundName = fallbackOrder[i] + "BarBackground";
+            string scoreName = fallbackOrder[i] + "ScoreValue";
+
+            if (objectName == labelName ||
+                objectName == backgroundName ||
+                objectName == scoreName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool TryGetEditorLobbyAvatar(
+        PlayerController.ControlType type,
+        out string displayName,
+        out Color uiColor
+    )
+    {
+        displayName = string.Empty;
+        uiColor = Color.white;
+
+        string lobbyScenePath = System.IO.Path.Combine(Application.dataPath, "Scenes", "Lobby.unity");
+        if (!System.IO.File.Exists(lobbyScenePath))
+        {
+            return false;
+        }
+
+        string[] lines = System.IO.File.ReadAllLines(lobbyScenePath);
+        int playerIndex = GetPlayerIndex(type);
+        if (playerIndex < 0)
+        {
+            return false;
+        }
+
+        int currentAvatarIndex = -1;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string trimmed = lines[i].Trim();
+            if (trimmed == "playerAvatars:")
+            {
+                currentAvatarIndex = -1;
+                continue;
+            }
+
+            if (trimmed.StartsWith("- displayName:"))
+            {
+                currentAvatarIndex++;
+                if (currentAvatarIndex != playerIndex)
+                {
+                    continue;
+                }
+
+                displayName = trimmed.Substring("- displayName:".Length).Trim();
+                if (displayName.Length == 0)
+                {
+                    displayName = GameManager.GetDefaultPlayerDisplayName(type);
+                }
+
+                for (int lineIndex = i + 1; lineIndex < Mathf.Min(i + 6, lines.Length); lineIndex++)
+                {
+                    string colorLine = lines[lineIndex].Trim();
+                    if (!colorLine.StartsWith("uiColor:"))
+                    {
+                        continue;
+                    }
+
+                    uiColor = ParseYamlColor(colorLine, GameManager.GetDefaultPlayerUiColor(type));
+                    return true;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    int GetPlayerIndex(PlayerController.ControlType type)
+    {
+        for (int i = 0; i < fallbackOrder.Length; i++)
+        {
+            if (fallbackOrder[i] == type)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    Color ParseYamlColor(string colorLine, Color fallback)
+    {
+        float r = TryParseYamlColorValue(colorLine, "r", fallback.r);
+        float g = TryParseYamlColorValue(colorLine, "g", fallback.g);
+        float b = TryParseYamlColorValue(colorLine, "b", fallback.b);
+        float a = TryParseYamlColorValue(colorLine, "a", fallback.a);
+        return new Color(r, g, b, a);
+    }
+
+    float TryParseYamlColorValue(string colorLine, string key, float fallback)
+    {
+        string token = key + ": ";
+        int tokenIndex = colorLine.IndexOf(token, System.StringComparison.Ordinal);
+        if (tokenIndex < 0)
+        {
+            return fallback;
+        }
+
+        int startIndex = tokenIndex + token.Length;
+        int endIndex = colorLine.IndexOfAny(new[] { ',', '}' }, startIndex);
+        if (endIndex < 0)
+        {
+            endIndex = colorLine.Length;
+        }
+
+        string valueText = colorLine.Substring(startIndex, endIndex - startIndex).Trim();
+        return float.TryParse(
+            valueText,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out float parsedValue
+        )
+            ? parsedValue
+            : fallback;
+    }
+#endif
+
     void EnsureBlockImages(PlayerController.ControlType type, RectTransform root)
     {
         if (root == null)
         {
             return;
+        }
+
+        if (!blockRoots.TryGetValue(type, out List<RectTransform> roots))
+        {
+            roots = new List<RectTransform>();
+            blockRoots[type] = roots;
         }
 
         if (!blockImages.TryGetValue(type, out List<Image> images))
@@ -893,30 +1605,89 @@ public class ScoreboardUI : MonoBehaviour
             blockImages[type] = images;
         }
 
+        if (!blockTintImages.TryGetValue(type, out List<Image> tintImages))
+        {
+            tintImages = new List<Image>();
+            blockTintImages[type] = tintImages;
+        }
+
+        CleanupLegacyBlockVisuals(root);
+        roots.Clear();
         images.Clear();
+        tintImages.Clear();
 
         for (int i = 0; i < targetScore; i++)
         {
             Transform child = root.Find("Block" + i);
-            Image image = child != null ? child.GetComponent<Image>() : null;
-            if (image == null)
+            RectTransform blockRect = child != null ? child.GetComponent<RectTransform>() : null;
+            if (blockRect == null)
             {
-                GameObject blockObject = new GameObject("Block" + i, typeof(RectTransform), typeof(Image));
+                GameObject blockObject = new GameObject("Block" + i, typeof(RectTransform));
                 blockObject.transform.SetParent(root, false);
-                image = blockObject.GetComponent<Image>();
-                image.raycastTarget = false;
+                blockRect = blockObject.GetComponent<RectTransform>();
             }
 
-            image.sprite = GetFullBlockSprite();
-            image.preserveAspect = true;
-            image.type = Image.Type.Simple;
-            images.Add(image);
+            CleanupBlockContainer(blockRect);
+
+            Transform tintTransform = blockRect.Find("Tint");
+            Image tintImage = tintTransform != null ? tintTransform.GetComponent<Image>() : null;
+            if (tintImage == null)
+            {
+                GameObject tintObject = new GameObject("Tint", typeof(RectTransform), typeof(Image));
+                tintObject.transform.SetParent(blockRect, false);
+                tintImage = tintObject.GetComponent<Image>();
+                tintImage.raycastTarget = false;
+            }
+
+            Transform artTransform = blockRect.Find("Art");
+            Image artImage = artTransform != null ? artTransform.GetComponent<Image>() : null;
+            if (artImage == null)
+            {
+                GameObject artObject = new GameObject("Art", typeof(RectTransform), typeof(Image));
+                artObject.transform.SetParent(blockRect, false);
+                artImage = artObject.GetComponent<Image>();
+                artImage.raycastTarget = false;
+            }
+
+            tintImage.transform.SetAsFirstSibling();
+            artImage.transform.SetAsLastSibling();
+
+            RectTransform tintRect = tintImage.rectTransform;
+            tintRect.anchorMin = Vector2.zero;
+            tintRect.anchorMax = Vector2.one;
+            tintRect.pivot = new Vector2(0.5f, 0.5f);
+            tintRect.offsetMin = new Vector2(0f, blockTintVerticalInset);
+            tintRect.offsetMax = new Vector2(0f, -blockTintVerticalInset);
+            tintRect.localScale = Vector3.one * blockTintScale;
+
+            RectTransform artRect = artImage.rectTransform;
+            artRect.anchorMin = Vector2.zero;
+            artRect.anchorMax = Vector2.one;
+            artRect.pivot = new Vector2(0.5f, 0.5f);
+            artRect.offsetMin = new Vector2(0f, -artVerticalOverflow);
+            artRect.offsetMax = new Vector2(0f, artVerticalOverflow);
+
+            tintImage.sprite = GetFallbackBlockSprite();
+            tintImage.preserveAspect = false;
+            tintImage.type = Image.Type.Simple;
+            tintImage.color = Color.clear;
+
+            artImage.sprite = GetFullBlockSprite();
+            artImage.preserveAspect = true;
+            artImage.type = Image.Type.Simple;
+            artImage.color = Color.white;
+
+            roots.Add(blockRect);
+            images.Add(artImage);
+            tintImages.Add(tintImage);
         }
     }
 
     void LayoutBlockImages(PlayerController.ControlType type)
     {
-        if (!blockImages.TryGetValue(type, out List<Image> images))
+        if (!blockRoots.TryGetValue(type, out List<RectTransform> roots) ||
+            !blockImages.TryGetValue(type, out List<Image> images) ||
+            !blockTintImages.TryGetValue(type, out List<Image> tintImages))
         {
             return;
         }
@@ -927,32 +1698,273 @@ public class ScoreboardUI : MonoBehaviour
             return;
         }
 
-        float contentWidth = Mathf.Max(1f, barWidth - blockPaddingX * 2f);
-        float slotWidth = contentWidth / Mathf.Max(1, targetScore);
+        RectTransform blockRoot = barFills.TryGetValue(type, out RectTransform fillRoot) ? fillRoot : null;
+        float contentWidth = blockRoot != null
+            ? Mathf.Max(1f, blockRoot.rect.width)
+            : Mathf.Max(1f, GetScaledBarWidth());
         float fullBlockWidth = Mathf.Max(1f, fullBlockDisplayWidth);
-        float fullBlockHeight = Mathf.Max(1f, fullBlockDisplayHeight);
+        float fullBlockHeight = Mathf.Max(
+            1f,
+            blockRoot != null ? Mathf.Min(fullBlockDisplayHeight, blockRoot.rect.height) : fullBlockDisplayHeight
+        );
+        bool useChartGrid = TryGetChartGridLayout(
+            contentWidth,
+            out float chartSlotStart,
+            out float chartSlotStep,
+            out float chartSlotInteriorWidth
+        );
+        float fallbackSlotWidth = contentWidth / Mathf.Max(1, targetScore);
 
-        for (int i = 0; i < images.Count; i++)
+        for (int i = 0; i < roots.Count; i++)
         {
-            Image image = images[i];
-            if (image == null)
+            RectTransform blockRect = roots[i];
+            Image artImage = images[i];
+            if (blockRect == null || artImage == null)
             {
                 continue;
             }
 
-            Sprite sprite = image.sprite != null ? image.sprite : fullSprite;
-            float widthRatio = sprite.rect.width / Mathf.Max(1f, fullSprite.rect.width);
-            float width = fullBlockWidth * widthRatio;
-            float height = fullBlockHeight;
+            Image tintImage = i < tintImages.Count ? tintImages[i] : null;
+            if (tintImage == null)
+            {
+                continue;
+            }
 
-            RectTransform rect = image.rectTransform;
-            rect.anchorMin = new Vector2(0f, 0.5f);
-            rect.anchorMax = new Vector2(0f, 0.5f);
-            rect.pivot = new Vector2(0f, 0.5f);
-            rect.sizeDelta = new Vector2(width, height);
-            rect.anchoredPosition = new Vector2(i * slotWidth + (slotWidth - width) * 0.5f, 0f);
-            rect.localScale = Vector3.one;
+            Sprite sprite = artImage.sprite != null ? artImage.sprite : fullSprite;
+            bool isSlimBlock = IsSlimBlockSprite(sprite);
+            float sourcePixelWidth = GetDisplayBlockPixelWidth(sprite, fullSprite);
+            float width = useChartGrid
+                ? GetChartAlignedBlockWidth(sprite, fullSprite, contentWidth)
+                : fullBlockWidth * (sourcePixelWidth / Mathf.Max(1f, fullSprite.rect.width));
+            float height = fullBlockHeight;
+            float xPosition = useChartGrid
+                ? GetChartAlignedBlockX(i, width, chartSlotStart, chartSlotStep, chartSlotInteriorWidth)
+                : i * fallbackSlotWidth + (fallbackSlotWidth - width) * 0.5f;
+
+            float rightOffset = Mathf.Max(0f, contentWidth - xPosition - width);
+            blockRect.anchorMin = Vector2.zero;
+            blockRect.anchorMax = Vector2.one;
+            blockRect.pivot = new Vector2(0.5f, 0.5f);
+            blockRect.offsetMin = new Vector2(xPosition, 0f);
+            blockRect.offsetMax = new Vector2(-rightOffset, 0f);
+            blockRect.localScale = Vector3.one;
+
+            RectTransform tintRect = tintImage.rectTransform;
+            tintRect.anchorMin = Vector2.zero;
+            tintRect.anchorMax = Vector2.one;
+            tintRect.pivot = new Vector2(0.5f, 0.5f);
+            if (isSlimBlock)
+            {
+                float visiblePixelWidth = Mathf.Max(1f, GetSlimBlockVisiblePixelWidth());
+                float tintWidth = Mathf.Clamp(slimBlockTintPixelWidth, 0.1f, visiblePixelWidth);
+                float pixelToUi = width / visiblePixelWidth;
+                float horizontalInset = (visiblePixelWidth - tintWidth) * 0.5f * pixelToUi;
+                tintRect.offsetMin = new Vector2(horizontalInset, blockTintVerticalInset);
+                tintRect.offsetMax = new Vector2(-horizontalInset, -blockTintVerticalInset);
+            }
+            else
+            {
+                tintRect.offsetMin = new Vector2(0f, blockTintVerticalInset);
+                tintRect.offsetMax = new Vector2(0f, -blockTintVerticalInset);
+            }
+            tintRect.localScale = Vector3.one * blockTintScale;
+
+            RectTransform artRect = artImage.rectTransform;
+            artRect.anchorMin = Vector2.zero;
+            artRect.anchorMax = Vector2.one;
+            artRect.pivot = new Vector2(0.5f, 0.5f);
+            if (isSlimBlock)
+            {
+                float visiblePixelWidth = Mathf.Max(1f, GetSlimBlockVisiblePixelWidth());
+                float pixelToUi = width / visiblePixelWidth;
+                float leftOverflow = slimBlockTransparentLeftPixels * pixelToUi;
+                float rightOverflow = slimBlockTransparentRightPixels * pixelToUi;
+                artRect.offsetMin = new Vector2(-leftOverflow, -artVerticalOverflow);
+                artRect.offsetMax = new Vector2(rightOverflow, artVerticalOverflow);
+            }
+            else
+            {
+                artRect.offsetMin = new Vector2(0f, -artVerticalOverflow);
+                artRect.offsetMax = new Vector2(0f, artVerticalOverflow);
+            }
+            artRect.localScale = Vector3.one;
         }
+    }
+
+    bool TryGetChartGridLayout(
+        float contentWidth,
+        out float slotStart,
+        out float slotStep,
+        out float slotInteriorWidth
+    )
+    {
+        slotStart = 0f;
+        slotStep = 0f;
+        slotInteriorWidth = 0f;
+
+        Sprite chartSprite = GetChartBackgroundSprite();
+        if (chartSprite == null || chartSprite.rect.width <= 0f)
+        {
+            return false;
+        }
+
+        float pixelToUi = contentWidth / chartSprite.rect.width;
+        slotStart = (chartGridFirstLinePixel + chartGridLineWidthPixels) * pixelToUi;
+        slotStep = chartGridStepPixels * pixelToUi;
+        slotInteriorWidth = Mathf.Max(0f, (chartGridStepPixels - chartGridLineWidthPixels) * pixelToUi);
+        return true;
+    }
+
+    float GetChartAlignedBlockWidth(Sprite sprite, Sprite fullSprite, float contentWidth)
+    {
+        Sprite chartSprite = GetChartBackgroundSprite();
+        if (chartSprite == null || chartSprite.rect.width <= 0f)
+        {
+            return Mathf.Max(1f, fullBlockDisplayWidth);
+        }
+
+        float pixelWidth = GetChartAlignedBlockPixelWidth(sprite, fullSprite);
+        return Mathf.Max(1f, contentWidth * pixelWidth / chartSprite.rect.width);
+    }
+
+    float GetChartAlignedBlockPixelWidth(Sprite sprite, Sprite fullSprite)
+    {
+        return GetDisplayBlockPixelWidth(sprite, fullSprite);
+    }
+
+    float GetDisplayBlockPixelWidth(Sprite sprite, Sprite fullSprite)
+    {
+        if (sprite == null)
+        {
+            return fullSprite != null ? fullSprite.rect.width : 1f;
+        }
+
+        if (IsSlimBlockSprite(sprite))
+        {
+            return GetSlimBlockVisiblePixelWidth();
+        }
+
+        return sprite.rect.width;
+    }
+
+    float GetSlimBlockVisiblePixelWidth()
+    {
+        return Mathf.Max(1f, slimBlockPixelWidth - slimBlockTransparentLeftPixels - slimBlockTransparentRightPixels);
+    }
+
+    bool IsSlimBlockSprite(Sprite sprite)
+    {
+        return slimBlockSprite != null && sprite == slimBlockSprite;
+    }
+
+    float GetChartAlignedBlockX(
+        int index,
+        float blockWidth,
+        float slotStart,
+        float slotStep,
+        float slotInteriorWidth
+    )
+    {
+        return slotStart + index * slotStep;
+    }
+
+    void CleanupLegacyBlockVisuals(RectTransform root)
+    {
+        if (root == null)
+        {
+            return;
+        }
+
+        List<GameObject> toRemove = new List<GameObject>();
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (!TryGetBlockIndex(child != null ? child.name : string.Empty, out int blockIndex) ||
+                blockIndex < 0 ||
+                blockIndex >= targetScore)
+            {
+                if (child != null)
+                {
+                    toRemove.Add(child.gameObject);
+                }
+            }
+        }
+
+        for (int i = 0; i < targetScore; i++)
+        {
+            RemoveDuplicateNamedChildren(root, "Block" + i);
+        }
+
+        for (int i = 0; i < toRemove.Count; i++)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                DestroyImmediate(toRemove[i]);
+                continue;
+            }
+#endif
+            Destroy(toRemove[i]);
+        }
+    }
+
+    void CleanupBlockContainer(Transform blockTransform)
+    {
+        if (blockTransform == null)
+        {
+            return;
+        }
+
+        Image legacyImage = blockTransform.GetComponent<Image>();
+        if (legacyImage != null)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                DestroyImmediate(legacyImage);
+            }
+            else
+#endif
+            {
+                Destroy(legacyImage);
+            }
+        }
+
+        RemoveDuplicateNamedChildren(blockTransform, "Tint");
+        RemoveDuplicateNamedChildren(blockTransform, "Art");
+
+        List<GameObject> toRemove = new List<GameObject>();
+        for (int i = 0; i < blockTransform.childCount; i++)
+        {
+            Transform child = blockTransform.GetChild(i);
+            if (child != null && child.name != "Tint" && child.name != "Art")
+            {
+                toRemove.Add(child.gameObject);
+            }
+        }
+
+        for (int i = 0; i < toRemove.Count; i++)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                DestroyImmediate(toRemove[i]);
+                continue;
+            }
+#endif
+            Destroy(toRemove[i]);
+        }
+    }
+
+    bool TryGetBlockIndex(string objectName, out int index)
+    {
+        index = -1;
+        if (string.IsNullOrEmpty(objectName) || !objectName.StartsWith("Block"))
+        {
+            return false;
+        }
+
+        return int.TryParse(objectName.Substring("Block".Length), out index);
     }
 
     void ApplyRaceBlocks(
@@ -996,7 +2008,9 @@ public class ScoreboardUI : MonoBehaviour
         Color emptyColor
     )
     {
-        if (!blockImages.TryGetValue(type, out List<Image> images))
+        if (!blockRoots.TryGetValue(type, out List<RectTransform> roots) ||
+            !blockImages.TryGetValue(type, out List<Image> images) ||
+            !blockTintImages.TryGetValue(type, out List<Image> tintImages))
         {
             return;
         }
@@ -1005,17 +2019,39 @@ public class ScoreboardUI : MonoBehaviour
 
         for (int i = 0; i < images.Count; i++)
         {
-            Image image = images[i];
-            if (image == null)
+            Image artImage = images[i];
+            if (artImage == null)
             {
                 continue;
             }
 
+            RectTransform blockRect = i < roots.Count ? roots[i] : null;
+            Image tintImage = i < tintImages.Count ? tintImages[i] : null;
             float fill = Mathf.Clamp01(score - i);
-            image.enabled = fill >= 0.125f;
-            image.sprite = ResolveBlockSprite(fill);
-            image.color = image.enabled ? filledColor : emptyColor;
-            image.rectTransform.localScale = Vector3.one * Mathf.Lerp(0.94f, 1f, fill);
+            bool isFilled = fill >= 0.125f;
+            Sprite blockSpriteForFill = ResolveBlockSprite(fill);
+            bool isSlimBlock = blockSpriteForFill == GetSlimBlockSprite();
+
+            artImage.enabled = isFilled;
+            artImage.sprite = blockSpriteForFill;
+            artImage.preserveAspect = true;
+            artImage.color = Color.white;
+            artImage.rectTransform.localScale = Vector3.one;
+
+            if (tintImage != null)
+            {
+                tintImage.enabled = isFilled;
+                tintImage.sprite = GetFallbackBlockSprite();
+                tintImage.preserveAspect = false;
+                tintImage.color = isFilled
+                    ? Color.Lerp(filledColor, Color.white, 0.08f)
+                    : emptyColor;
+            }
+
+            if (blockRect != null)
+            {
+                blockRect.localScale = Vector3.one;
+            }
         }
 
         LayoutBlockImages(type);

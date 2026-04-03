@@ -3,6 +3,8 @@ using UnityEngine;
 
 public class PlayerSessionManager : MonoBehaviour
 {
+    static bool creatingDedicatedInstance;
+
     [System.Serializable]
     public class SessionPlayer
     {
@@ -41,15 +43,66 @@ public class PlayerSessionManager : MonoBehaviour
 
     void Awake()
     {
+        if (creatingDedicatedInstance)
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+            return;
+        }
+
         if (Instance == null)
         {
+            if (NeedsDedicatedPersistentObject())
+            {
+                PromoteToDedicatedPersistentObject();
+                Destroy(this);
+                return;
+            }
+
             Instance = this;
             DontDestroyOnLoad(gameObject);
         }
         else
         {
-            Destroy(gameObject);
+            Destroy(this);
         }
+    }
+
+    bool NeedsDedicatedPersistentObject()
+    {
+        MonoBehaviour[] behaviours = GetComponents<MonoBehaviour>();
+
+        for (int i = 0; i < behaviours.Length; i++)
+        {
+            if (behaviours[i] != null && behaviours[i] != this)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void PromoteToDedicatedPersistentObject()
+    {
+        List<SessionPlayer> preservedPlayers = GetSessionPlayersCopy();
+        List<PlayerController.ControlType> preservedActivePlayers =
+            new List<PlayerController.ControlType>(activePlayers);
+
+        creatingDedicatedInstance = true;
+        GameObject persistentObject = new GameObject("PlayerSessionManager");
+        PlayerSessionManager persistentManager =
+            persistentObject.AddComponent<PlayerSessionManager>();
+        creatingDedicatedInstance = false;
+
+        if (preservedPlayers.Count > 0)
+        {
+            persistentManager.SetSessionPlayers(preservedPlayers);
+            return;
+        }
+
+        persistentManager.activePlayers.Clear();
+        persistentManager.activePlayers.AddRange(preservedActivePlayers);
     }
 
     public void SetSessionPlayers(IEnumerable<SessionPlayer> players)

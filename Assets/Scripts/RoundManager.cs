@@ -69,6 +69,7 @@ public class RoundManager : MonoBehaviour
     const float DefaultTagSelectionRevealDuration = 0.85f;
     const float DefaultTagEndFocusDuration = 1f;
     const float DefaultTagEndBlastTextDuration = 1.35f;
+    const float KenneyFontScale = 1.2f;
 
     void Awake()
     {
@@ -176,6 +177,54 @@ public class RoundManager : MonoBehaviour
         BankHeldBonusScores(controlType);
         ConsumeHeldCoins(controlType);
         TryFinishRaceRound();
+    }
+
+    public void TriggerObjectiveWin(PlayerController.ControlType winner)
+    {
+        if (IsTagMode || roundEnding || GameManager.Instance == null)
+        {
+            return;
+        }
+
+        if (!GameManager.Instance.TryGetSessionPlayer(winner, out _))
+        {
+            return;
+        }
+
+        finishOrder.Clear();
+        finishedPlayers.Clear();
+        deadPlayers.Clear();
+
+        finishedPlayers.Add(winner);
+        finishOrder.Add(winner);
+
+        if (GameManager.Instance.TryGetPlayer(winner, out PlayerController winnerController) &&
+            winnerController != null)
+        {
+            winnerController.SetControlEnabled(false);
+        }
+
+        BankHeldBonusScores(winner);
+        ConsumeHeldCoins(winner);
+
+        if (ScoreManager.Instance != null)
+        {
+            ScoreManager.Instance.SetScore(winner, ScoreManager.WinningScore);
+
+            if (ScoreManager.Instance.TryGetMatchLeaders(
+                GetScorePriorityOrder(finishOrder),
+                out List<PlayerController.ControlType> leaders,
+                out float winningScore
+            ))
+            {
+                roundEnding = true;
+                SetRoundEndState();
+                StartCoroutine(FinishPartyMatchSequence(leaders, winningScore));
+                return;
+            }
+        }
+
+        FinishRaceRound();
     }
 
     public void PlayerDied(PlayerController.ControlType player)
@@ -386,6 +435,9 @@ public class RoundManager : MonoBehaviour
 
         bool noWinner = finishOrder.Count == 0;
         bool matchWon = false;
+        float winningScore = 0f;
+        List<PlayerController.ControlType> matchLeaders =
+            new List<PlayerController.ControlType>();
         PlayerController.ControlType? scoreboardWinner = noWinner
             ? null
             : finishOrder[0];
@@ -394,14 +446,24 @@ public class RoundManager : MonoBehaviour
         {
             AwardRaceRoundPoints();
 
-            if (ScoreManager.Instance.TryGetMatchWinner(GetScorePriorityOrder(), out var matchWinner))
+            if (ScoreManager.Instance.TryGetMatchLeaders(
+                GetScorePriorityOrder(),
+                out matchLeaders,
+                out winningScore
+            ))
             {
-                scoreboardWinner = matchWinner;
+                scoreboardWinner = matchLeaders[0];
                 matchWon = true;
             }
         }
 
         SetRoundEndState();
+
+        if (matchWon)
+        {
+            StartCoroutine(FinishPartyMatchSequence(matchLeaders, winningScore));
+            return;
+        }
 
         ScoreboardUI board = FindObjectOfType<ScoreboardUI>();
         if (board != null)
@@ -417,6 +479,33 @@ public class RoundManager : MonoBehaviour
         }
 
         StartCoroutine(NextRound(matchWon));
+    }
+
+    IEnumerator FinishPartyMatchSequence(
+        List<PlayerController.ControlType> leaders,
+        float winningScore
+    )
+    {
+        ScoreboardUI board = FindObjectOfType<ScoreboardUI>();
+        if (board != null)
+        {
+            board.Hide();
+        }
+
+        PartyMatchEndOverlayUI endOverlay = FindObjectOfType<PartyMatchEndOverlayUI>(true);
+        if (endOverlay == null)
+        {
+            GameObject overlayObject = new GameObject("PartyMatchEndOverlayUI");
+            endOverlay = overlayObject.AddComponent<PartyMatchEndOverlayUI>();
+        }
+
+        yield return endOverlay.ShowAndWaitForContinue(
+            leaders,
+            GetScorePriorityOrder(),
+            winningScore
+        );
+
+        ReturnToLobbyFromPartyMode();
     }
 
     IEnumerator FinishTagRoundSequence()
@@ -505,6 +594,21 @@ public class RoundManager : MonoBehaviour
     }
 
     void ReturnToLobbyFromTagMode()
+    {
+        Time.timeScale = 1f;
+        ResetRoundState();
+
+        if (ScoreManager.Instance != null)
+        {
+            ScoreManager.ResetScores();
+        }
+
+        GameInput.ResetState();
+
+        SceneManager.LoadScene("Lobby");
+    }
+
+    void ReturnToLobbyFromPartyMode()
     {
         Time.timeScale = 1f;
         ResetRoundState();
@@ -801,7 +905,7 @@ public class RoundManager : MonoBehaviour
         tagHudText = textObject.GetComponent<TextMeshProUGUI>();
         tagHudText.font = TMP_Settings.defaultFontAsset;
         tagHudText.alignment = TextAlignmentOptions.Center;
-        tagHudText.fontSize = 28f;
+        tagHudText.fontSize = 28f * KenneyFontScale;
         tagHudText.color = Color.white;
 
         RectTransform textRect = tagHudText.rectTransform;
@@ -911,7 +1015,7 @@ public class RoundManager : MonoBehaviour
         TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
         text.font = TMP_Settings.defaultFontAsset;
         text.alignment = TextAlignmentOptions.Center;
-        text.fontSize = fontSize;
+        text.fontSize = fontSize * KenneyFontScale;
         text.color = Color.white;
 
         RectTransform rect = text.rectTransform;
@@ -1357,6 +1461,24 @@ public class RoundManager : MonoBehaviour
 
     void ResetScenePickups(bool forceFullReset)
     {
+        SandBeaconGroup[] beaconGroups = FindObjectsOfType<SandBeaconGroup>(true);
+        foreach (SandBeaconGroup group in beaconGroups)
+        {
+            if (group != null)
+            {
+                group.ResetGroup();
+            }
+        }
+
+        SandBeacon[] beacons = FindObjectsOfType<SandBeacon>(true);
+        foreach (SandBeacon beacon in beacons)
+        {
+            if (beacon != null)
+            {
+                beacon.ResetBeacon();
+            }
+        }
+
         BlueBeetleEnemy[] beetles = FindObjectsOfType<BlueBeetleEnemy>(true);
         foreach (BlueBeetleEnemy beetle in beetles)
         {

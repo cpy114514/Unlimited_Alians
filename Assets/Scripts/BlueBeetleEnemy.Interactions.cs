@@ -2,6 +2,38 @@ using UnityEngine;
 
 public partial class BlueBeetleEnemy
 {
+    void ProcessBeetleInteractions()
+    {
+        if (state == BeetleState.Walking || bodyCollider == null)
+        {
+            return;
+        }
+
+        Bounds myBounds = bodyCollider.bounds;
+
+        for (int i = 0; i < activeBeetles.Count; i++)
+        {
+            BlueBeetleEnemy other = activeBeetles[i];
+            if (other == null || other == this || other.bodyCollider == null)
+            {
+                continue;
+            }
+
+            if (!other.gameObject.activeInHierarchy || !myBounds.Intersects(other.bodyCollider.bounds))
+            {
+                continue;
+            }
+
+            if (!CanProcessBeetle(other))
+            {
+                continue;
+            }
+
+            HandleShellImpactWithBeetle(other);
+            return;
+        }
+    }
+
     void EnsureHitboxes()
     {
         backHitbox = EnsureHitbox("BackHitbox", backHitbox, backHitboxOffset, backHitboxSize);
@@ -242,6 +274,72 @@ public partial class BlueBeetleEnemy
         return false;
     }
 
+    bool CanProcessBeetle(BlueBeetleEnemy other)
+    {
+        if (other == null || other == this)
+        {
+            return false;
+        }
+
+        int otherId = other.GetInstanceID();
+        if (beetleInteractionCooldownUntil.TryGetValue(otherId, out float cooldownUntil) &&
+            Time.time < cooldownUntil)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    void MarkBeetleProcessed(BlueBeetleEnemy other)
+    {
+        if (other == null)
+        {
+            return;
+        }
+
+        float cooldownUntil = Time.time + beetleInteractionCooldown;
+        beetleInteractionCooldownUntil[other.GetInstanceID()] = cooldownUntil;
+        other.beetleInteractionCooldownUntil[GetInstanceID()] = cooldownUntil;
+    }
+
+    void HandleShellImpactWithBeetle(BlueBeetleEnemy other)
+    {
+        if (other == null)
+        {
+            return;
+        }
+
+        MarkBeetleProcessed(other);
+
+        float impactDirection;
+        if (state == BeetleState.ShellMoving)
+        {
+            impactDirection = movingRight ? 1f : -1f;
+        }
+        else
+        {
+            impactDirection = other.transform.position.x >= transform.position.x ? 1f : -1f;
+        }
+
+        if (other.state == BeetleState.Walking)
+        {
+            other.EnterShellFromImpact(impactDirection);
+        }
+        else if (other.state == BeetleState.ShellMoving)
+        {
+            other.ReverseShellDirection();
+        }
+
+        if (state == BeetleState.ShellMoving)
+        {
+            ReverseShellDirection();
+        }
+
+        SeparateShellsAfterImpact(other, impactDirection);
+        RefreshAllBeetleCollisionRules();
+    }
+
     void TryHandleWalkingDamage()
     {
         int count = OverlapPlayers(hurtHitbox, overlapBuffer);
@@ -443,6 +541,7 @@ public partial class BlueBeetleEnemy
 
         ApplyColliderForState();
         ApplySprite(0f);
+        RefreshAllBeetleCollisionRules();
     }
 
     void StopShell()
@@ -455,6 +554,7 @@ public partial class BlueBeetleEnemy
         }
 
         ApplyColliderForState();
+        RefreshAllBeetleCollisionRules();
     }
 
     void KickShell(bool kickToRight, Collider2D kickerCollider)
@@ -477,9 +577,69 @@ public partial class BlueBeetleEnemy
             spriteRenderer.flipX = movingRight;
         }
 
+        RefreshAllBeetleCollisionRules();
+
         if (kickerCollider != null && shellKickIgnoreTime > 0f && bodyCollider != null)
         {
             StartCoroutine(TemporarilyIgnoreCollision(kickerCollider));
+        }
+    }
+
+    void EnterShellFromImpact(float impactDirection)
+    {
+        EnterShell();
+
+        Vector3 offset = new Vector3(impactDirection * shellImpactSeparation, 0f, 0f);
+        transform.position += offset;
+
+        if (rb != null)
+        {
+            rb.position = transform.position;
+            rb.velocity = new Vector2(0f, rb.velocity.y);
+        }
+    }
+
+    void ReverseShellDirection()
+    {
+        if (state != BeetleState.ShellMoving)
+        {
+            return;
+        }
+
+        movingRight = !movingRight;
+
+        if (rb != null)
+        {
+            rb.velocity = new Vector2(
+                (movingRight ? 1f : -1f) * shellMoveSpeed,
+                rb.velocity.y
+            );
+        }
+
+        if (spriteRenderer != null)
+        {
+            spriteRenderer.flipX = movingRight;
+        }
+    }
+
+    void SeparateShellsAfterImpact(BlueBeetleEnemy other, float impactDirection)
+    {
+        Vector3 offset = new Vector3(shellImpactSeparation * impactDirection, 0f, 0f);
+        transform.position -= offset;
+        if (rb != null)
+        {
+            rb.position = transform.position;
+        }
+
+        if (other == null)
+        {
+            return;
+        }
+
+        other.transform.position += offset;
+        if (other.rb != null)
+        {
+            other.rb.position = other.transform.position;
         }
     }
 

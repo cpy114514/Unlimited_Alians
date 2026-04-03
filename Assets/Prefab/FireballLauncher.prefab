@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 8406187458036611022}
   - component: {fileID: 8406187458036611023}
   - component: {fileID: 8406187458036611024}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: FireballLauncher
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -101,5 +101,6 @@ MonoBehaviour:
   projectilePrefab: {fileID: 3030820200201240941, guid: 0da1b0864a93431a9e249f551d97f5d2, type: 3}
   shotInterval: 1.4
   projectileOffset: 0.62
+  projectileHeightOffset: 0.18
   colliderSize: {x: 0.96, y: 0.96}
   facingRight: 0

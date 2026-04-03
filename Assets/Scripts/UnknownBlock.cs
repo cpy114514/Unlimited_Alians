@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
+[ExecuteAlways]
 [DisallowMultipleComponent]
 [RequireComponent(typeof(SpriteRenderer))]
 [RequireComponent(typeof(BoxCollider2D))]
@@ -36,10 +37,12 @@ public class UnknownBlock : MonoBehaviour
     public float beetleHorizontalSpeed = 2.4f;
     public List<SpawnOption> spawnOptions = new List<SpawnOption>();
 
-    SpriteRenderer spriteRenderer;
-    BoxCollider2D blockCollider;
-    BoxCollider2D hitTriggerCollider;
-    UnknownBlockHitTrigger hitTriggerRelay;
+    [Header("Generated References")]
+    [SerializeField] SpriteRenderer spriteRenderer;
+    [SerializeField] BoxCollider2D blockCollider;
+    [SerializeField] Transform hitTriggerTransform;
+    [SerializeField] BoxCollider2D hitTriggerCollider;
+    [SerializeField] UnknownBlockHitTrigger hitTriggerRelay;
     Vector3 baseLocalPosition;
     bool used;
     float bumpTimer;
@@ -55,6 +58,21 @@ public class UnknownBlock : MonoBehaviour
         {
             unusedSprite = spriteRenderer.sprite;
         }
+    }
+
+    void OnEnable()
+    {
+        if (spriteRenderer == null)
+        {
+            spriteRenderer = GetComponent<SpriteRenderer>();
+        }
+
+        if (blockCollider == null)
+        {
+            blockCollider = GetComponent<BoxCollider2D>();
+        }
+
+        EnsureHitTrigger();
     }
 
     void OnValidate()
@@ -242,7 +260,7 @@ public class UnknownBlock : MonoBehaviour
 
     void EnsureHitTrigger()
     {
-        Transform existing = transform.Find("HitTrigger");
+        Transform existing = hitTriggerTransform != null ? hitTriggerTransform : transform.Find("HitTrigger");
         GameObject triggerObject = existing != null ? existing.gameObject : null;
         bool createdObject = false;
 
@@ -252,6 +270,8 @@ public class UnknownBlock : MonoBehaviour
             triggerObject.transform.SetParent(transform, false);
             createdObject = true;
         }
+
+        hitTriggerTransform = triggerObject.transform;
 
         hitTriggerRelay = triggerObject.GetComponent<UnknownBlockHitTrigger>();
 
