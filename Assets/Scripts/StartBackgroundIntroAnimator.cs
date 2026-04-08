@@ -1,4 +1,5 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -7,8 +8,10 @@ public class StartBackgroundIntroAnimator : MonoBehaviour
 {
     [Header("Targets")]
     public Transform[] backgroundPieces = new Transform[0];
+    public Transform[] titlePieces = new Transform[0];
     public Transform[] buttonPieces = new Transform[0];
     public bool autoFindDirectCanvasImages = true;
+    public bool autoFindDirectCanvasTitles = true;
     public bool autoFindDirectCanvasButtons = true;
 
     [Header("Motion")]
@@ -83,12 +86,17 @@ public class StartBackgroundIntroAnimator : MonoBehaviour
             backgroundPieces = FindDefaultBackgroundPieces();
         }
 
+        if ((titlePieces == null || titlePieces.Length == 0) && autoFindDirectCanvasTitles)
+        {
+            titlePieces = FindDirectCanvasTitles();
+        }
+
         if ((buttonPieces == null || buttonPieces.Length == 0) && autoFindDirectCanvasButtons)
         {
             buttonPieces = FindDirectCanvasButtons();
         }
 
-        animatedPieces = CombineTargets(backgroundPieces, buttonPieces);
+        animatedPieces = CombineTargets(backgroundPieces, titlePieces, buttonPieces);
         if (animatedPieces.Length == 0)
         {
             animatedPieces = BuildCurrentTargetList();
@@ -281,11 +289,12 @@ public class StartBackgroundIntroAnimator : MonoBehaviour
         return new[] { first, center, last };
     }
 
-    Transform[] CombineTargets(Transform[] first, Transform[] second)
+    Transform[] CombineTargets(Transform[] first, Transform[] second, Transform[] third)
     {
         System.Collections.Generic.List<Transform> combined = new System.Collections.Generic.List<Transform>();
         AddTargets(combined, first);
         AddTargets(combined, second);
+        AddTargets(combined, third);
         return combined.ToArray();
     }
 
@@ -296,6 +305,12 @@ public class StartBackgroundIntroAnimator : MonoBehaviour
         if (autoFindDirectCanvasImages)
         {
             AddTargets(targets, FindDirectCanvasImages());
+        }
+
+        AddTargets(targets, titlePieces);
+        if (autoFindDirectCanvasTitles)
+        {
+            AddTargets(targets, FindDirectCanvasTitles());
         }
 
         AddTargets(targets, buttonPieces);
@@ -406,6 +421,29 @@ public class StartBackgroundIntroAnimator : MonoBehaviour
         }
 
         return images.ToArray();
+    }
+
+    Transform[] FindDirectCanvasTitles()
+    {
+        System.Collections.Generic.List<Transform> titles = new System.Collections.Generic.List<Transform>();
+        for (int i = 0; i < transform.childCount; i++)
+        {
+            Transform child = transform.GetChild(i);
+            if (child == null || !child.gameObject.activeSelf)
+            {
+                continue;
+            }
+
+            if (!child.name.ToLowerInvariant().Contains("title") ||
+                child.GetComponent<TextMeshProUGUI>() == null)
+            {
+                continue;
+            }
+
+            titles.Add(child);
+        }
+
+        return titles.ToArray();
     }
 
     Transform[] FindDirectCanvasButtons()

@@ -455,6 +455,10 @@ public static class BlackHolePrefabParticles
         }
 
         string directory = System.IO.Path.GetDirectoryName(assetPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            directory = directory.Replace('\\', '/');
+        }
         if (!string.IsNullOrEmpty(directory) && !AssetDatabase.IsValidFolder(directory))
         {
             string[] segments = directory.Split('/');

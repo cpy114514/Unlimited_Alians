@@ -1372,18 +1372,6 @@ public partial class LobbyManager
         return runtimeCanvas;
     }
 
-#if UNITY_EDITOR
-    void OnValidate()
-    {
-        TryAutoAssignJoinPromptSprites();
-        EnsureJoinSlotLayouts();
-        if (!Application.isPlaying)
-        {
-            EditorApplication.delayCall -= EnsureJoinPromptUiInEditor;
-            EditorApplication.delayCall += EnsureJoinPromptUiInEditor;
-        }
-    }
-
     void EnsureJoinSlotLayouts()
     {
         if (joinSlotLayouts == null)
@@ -1407,6 +1395,18 @@ public partial class LobbyManager
         float x = (column - 1) * joinSlotSpacing.x;
         float y = row == 0 ? joinSlotSpacing.y * 0.5f : -joinSlotSpacing.y * 0.5f;
         return new Vector2(x, y);
+    }
+
+#if UNITY_EDITOR
+    void OnValidate()
+    {
+        TryAutoAssignJoinPromptSprites();
+        EnsureJoinSlotLayouts();
+        if (!Application.isPlaying)
+        {
+            EditorApplication.delayCall -= EnsureJoinPromptUiInEditor;
+            EditorApplication.delayCall += EnsureJoinPromptUiInEditor;
+        }
     }
 
     void TryAutoAssignJoinPromptSprites()

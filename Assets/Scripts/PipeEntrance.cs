@@ -296,15 +296,44 @@ public class PipeEntrance : MonoBehaviour
             return;
         }
 
+        int sceneHandle = gameObject != null ? gameObject.scene.handle : -1;
         PipePairManager[] managers = Resources.FindObjectsOfTypeAll<PipePairManager>();
+
+        PipePairManager fallback = null;
         for (int i = 0; i < managers.Length; i++)
         {
             PipePairManager candidate = managers[i];
-            if (candidate != null && candidate.gameObject.scene.IsValid())
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            GameObject candidateObject = candidate.gameObject;
+            if (candidateObject == null)
+            {
+                continue;
+            }
+
+            if (!candidateObject.scene.IsValid())
+            {
+                continue;
+            }
+
+            if (candidateObject.scene.handle == sceneHandle)
             {
                 pairManager = candidate;
-                break;
+                return;
             }
+
+            if (fallback == null)
+            {
+                fallback = candidate;
+            }
+        }
+
+        if (fallback != null)
+        {
+            pairManager = fallback;
         }
     }
 }

@@ -14,6 +14,7 @@ public class SettingsMenuController : MonoBehaviour
     const string FullscreenKey = "Settings.Fullscreen";
     const string ResolutionWidthKey = "Settings.ResolutionWidth";
     const string ResolutionHeightKey = "Settings.ResolutionHeight";
+    public const string ClickParticlesKey = "Settings.ClickParticles";
 
     [Header("Scenes")]
     public string startSceneName = "Start";
@@ -24,7 +25,7 @@ public class SettingsMenuController : MonoBehaviour
     public int minimumResolutionWidth = 960;
 
     [Header("Panel Layout")]
-    public Vector2 panelSize = new Vector2(900f, 760f);
+    public Vector2 panelSize = new Vector2(900f, 840f);
     public float titleFontSize = 84f;
     public float optionFontSize = 46f;
     public float hintFontSize = 30f;
@@ -52,10 +53,12 @@ public class SettingsMenuController : MonoBehaviour
     TextMeshProUGUI resolutionText;
     TextMeshProUGUI volumeText;
     TextMeshProUGUI fullscreenText;
+    TextMeshProUGUI clickParticlesText;
     TextMeshProUGUI backText;
     Image resolutionRowImage;
     Image volumeRowImage;
     Image fullscreenRowImage;
+    Image clickParticlesRowImage;
     Image backRowImage;
     RectTransform resolutionListRoot;
     RectTransform resolutionListContent;
@@ -72,10 +75,16 @@ public class SettingsMenuController : MonoBehaviour
     int resolutionIndex;
     float masterVolume = 1f;
     bool fullscreen;
+    bool clickParticlesEnabled = true;
 
     public static bool IsOpen
     {
         get { return instance != null && instance.isOpen; }
+    }
+
+    public static bool ClickParticlesEnabled
+    {
+        get { return PlayerPrefs.GetInt(ClickParticlesKey, 1) == 1; }
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -210,7 +219,7 @@ public class SettingsMenuController : MonoBehaviour
             }
             else
             {
-                selectedIndex = Mathf.Clamp(selectedIndex - move.y, 0, 3);
+                selectedIndex = Mathf.Clamp(selectedIndex - move.y, 0, 4);
                 SetResolutionListVisible(false);
             }
 
@@ -250,6 +259,10 @@ public class SettingsMenuController : MonoBehaviour
         {
             SetFullscreen(!fullscreen);
         }
+        else if (selectedIndex == 3)
+        {
+            SetClickParticlesEnabled(!clickParticlesEnabled);
+        }
     }
 
     void ActivateSelected()
@@ -269,6 +282,12 @@ public class SettingsMenuController : MonoBehaviour
         if (selectedIndex == 2)
         {
             SetFullscreen(!fullscreen);
+            return;
+        }
+
+        if (selectedIndex == 3)
+        {
+            SetClickParticlesEnabled(!clickParticlesEnabled);
             return;
         }
 
@@ -314,11 +333,20 @@ public class SettingsMenuController : MonoBehaviour
         RefreshTexts();
     }
 
+    void SetClickParticlesEnabled(bool value)
+    {
+        clickParticlesEnabled = value;
+        SaveSettings();
+        MouseClickParticleController.SetGlobalEnabled(value);
+        RefreshTexts();
+    }
+
     void LoadSettings()
     {
         EnsureResolutionOptions();
         masterVolume = PlayerPrefs.GetFloat(MasterVolumeKey, AudioListener.volume);
         fullscreen = PlayerPrefs.GetInt(FullscreenKey, Screen.fullScreen ? 1 : 0) == 1;
+        clickParticlesEnabled = PlayerPrefs.GetInt(ClickParticlesKey, 1) == 1;
         Vector2Int detectedResolution = GetDetectedResolution();
         bool hasSavedResolution =
             PlayerPrefs.HasKey(ResolutionWidthKey) &&
@@ -333,6 +361,7 @@ public class SettingsMenuController : MonoBehaviour
     {
         PlayerPrefs.SetFloat(MasterVolumeKey, masterVolume);
         PlayerPrefs.SetInt(FullscreenKey, fullscreen ? 1 : 0);
+        PlayerPrefs.SetInt(ClickParticlesKey, clickParticlesEnabled ? 1 : 0);
         Vector2Int resolution = GetSelectedResolution();
         if (resolution.x > 0 && resolution.y > 0)
         {
@@ -346,6 +375,7 @@ public class SettingsMenuController : MonoBehaviour
     void ApplySettings()
     {
         AudioListener.volume = Mathf.Clamp01(masterVolume);
+        MouseClickParticleController.SetGlobalEnabled(clickParticlesEnabled);
         Vector2Int resolution = GetSelectedResolution();
 
         if (resolution.x > 0 && resolution.y > 0)
@@ -689,14 +719,15 @@ public class SettingsMenuController : MonoBehaviour
         panelImage.raycastTarget = true;
 
         TextMeshProUGUI title = CreateText("Title", panel, "SETTINGS", titleFontSize, TextAlignmentOptions.Center);
-        title.rectTransform.anchoredPosition = new Vector2(0f, 280f);
+        title.rectTransform.anchoredPosition = new Vector2(0f, 330f);
         title.rectTransform.sizeDelta = new Vector2(panelSize.x - 80f, 100f);
 
-        resolutionRowImage = CreateOptionRow(panel, "ResolutionRow", new Vector2(0f, 150f), out resolutionText);
+        resolutionRowImage = CreateOptionRow(panel, "ResolutionRow", new Vector2(0f, 190f), out resolutionText);
         CreateResolutionList(panel);
-        volumeRowImage = CreateOptionRow(panel, "VolumeRow", new Vector2(0f, 40f), out volumeText);
-        fullscreenRowImage = CreateOptionRow(panel, "FullscreenRow", new Vector2(0f, -70f), out fullscreenText);
-        backRowImage = CreateOptionRow(panel, "BackRow", new Vector2(0f, -220f), out backText);
+        volumeRowImage = CreateOptionRow(panel, "VolumeRow", new Vector2(0f, 80f), out volumeText);
+        fullscreenRowImage = CreateOptionRow(panel, "FullscreenRow", new Vector2(0f, -30f), out fullscreenText);
+        clickParticlesRowImage = CreateOptionRow(panel, "ClickParticlesRow", new Vector2(0f, -140f), out clickParticlesText);
+        backRowImage = CreateOptionRow(panel, "BackRow", new Vector2(0f, -290f), out backText);
 
         TextMeshProUGUI hint = CreateText(
             "Hint",
@@ -705,7 +736,7 @@ public class SettingsMenuController : MonoBehaviour
             hintFontSize,
             TextAlignmentOptions.Center
         );
-        hint.rectTransform.anchoredPosition = new Vector2(0f, -320f);
+        hint.rectTransform.anchoredPosition = new Vector2(0f, -380f);
         hint.rectTransform.sizeDelta = new Vector2(panelSize.x - 80f, 52f);
 
         SetPanelVisible(false);
@@ -737,7 +768,7 @@ public class SettingsMenuController : MonoBehaviour
 
         int index = objectName == "ResolutionRow"
             ? 0
-            : (objectName == "VolumeRow" ? 1 : (objectName == "FullscreenRow" ? 2 : 3));
+            : (objectName == "VolumeRow" ? 1 : (objectName == "FullscreenRow" ? 2 : (objectName == "ClickParticlesRow" ? 3 : 4)));
         EventTrigger trigger = row.gameObject.AddComponent<EventTrigger>();
         Vector2 pointerDownPosition = Vector2.zero;
         bool dragged = false;
@@ -1000,6 +1031,11 @@ public class SettingsMenuController : MonoBehaviour
             fullscreenText.text = "FULLSCREEN  < " + (fullscreen ? "ON" : "OFF") + " >";
         }
 
+        if (clickParticlesText != null)
+        {
+            clickParticlesText.text = "CLICK FX  < " + (clickParticlesEnabled ? "ON" : "OFF") + " >";
+        }
+
         if (backText != null)
         {
             backText.text = "BACK";
@@ -1011,7 +1047,8 @@ public class SettingsMenuController : MonoBehaviour
         SetRowSelected(resolutionRowImage, resolutionText, selectedIndex == 0);
         SetRowSelected(volumeRowImage, volumeText, selectedIndex == 1);
         SetRowSelected(fullscreenRowImage, fullscreenText, selectedIndex == 2);
-        SetRowSelected(backRowImage, backText, selectedIndex == 3);
+        SetRowSelected(clickParticlesRowImage, clickParticlesText, selectedIndex == 3);
+        SetRowSelected(backRowImage, backText, selectedIndex == 4);
     }
 
     void SetRowSelected(Image image, TextMeshProUGUI text, bool selected)
@@ -1029,7 +1066,7 @@ public class SettingsMenuController : MonoBehaviour
 
     void HandleOptionPointerDown(int index)
     {
-        selectedIndex = Mathf.Clamp(index, 0, 3);
+        selectedIndex = Mathf.Clamp(index, 0, 4);
         if (index != 0)
         {
             SetResolutionListVisible(false);
@@ -1071,6 +1108,9 @@ public class SettingsMenuController : MonoBehaviour
 
     void HandleOptionPointerUp(int index, bool dragged)
     {
+        selectedIndex = Mathf.Clamp(index, 0, 4);
+        RefreshSelection();
+
         if (dragged)
         {
             if (index == 0)
@@ -1095,7 +1135,7 @@ public class SettingsMenuController : MonoBehaviour
     {
         Image image = index == 0
             ? resolutionRowImage
-            : (index == 1 ? volumeRowImage : (index == 2 ? fullscreenRowImage : backRowImage));
+            : (index == 1 ? volumeRowImage : (index == 2 ? fullscreenRowImage : (index == 3 ? clickParticlesRowImage : backRowImage)));
         return image != null ? image.rectTransform : null;
     }
 
